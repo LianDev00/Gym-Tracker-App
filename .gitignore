@@ -1,0 +1,40 @@
+# ─── Dart / Flutter ───────────────────────────────────────────────
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+build/
+
+# ─── IntelliJ / Android Studio ───────────────────────────────────
+.idea/
+*.iml
+
+# ─── Android ──────────────────────────────────────────────────────
+android/local.properties
+android/.gradle/
+android/key.properties
+*.keystore
+*.jks
+
+# ─── iOS / macOS ──────────────────────────────────────────────────
+ios/Flutter/flutter_export_environment.sh
+ios/Flutter/Generated.xcconfig
+macos/Flutter/GeneratedPluginRegistrant.swift
+macos/Flutter/Flutter-Debug.xcconfig
+macos/Flutter/Flutter-Release.xcconfig
+
+# ─── Web ──────────────────────────────────────────────────────────
+lib/generated_plugin_registrant.dart
+
+# ─── Sistema operativo ────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ─── Claude Code / archivos locales ───────────────────────────────
+.claude/
+.agents
+skills-lock.json
+later.md
+Notas.md
+problemas.md
+problemas_01.md
