@@ -139,7 +139,7 @@ flutter doctor
 
 ```bash
 # 1. Clonar el repositorio
-git clone <url-del-repositorio>
+git clone https://github.com/LianDev00/Gym-Tracker-App.git
 cd gym-tracker
 
 # 2. Instalar dependencias
