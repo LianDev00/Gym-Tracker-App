@@ -53,6 +53,7 @@ class _StatsScreenState extends State<StatsScreen> {
   // Historial combinado volumen + RIR por sesión
   List<({DateTime date, int sessionId, double volume, double? avgRir, int effectiveSets})>
       _sessionHistory = [];
+  Map<int, String> _sessionDominantMuscles = {};
 
   // Insights
   List<({String exerciseName, int deltaReps, double weightKg})> _repsProgress = [];
@@ -97,6 +98,7 @@ class _StatsScreenState extends State<StatsScreen> {
       _stats.weeklyEffectiveSetsComparison(now),
       _stats.recentRepsProgress(),
       _stats.weeklyMuscleFatigue(now),
+      _stats.sessionDominantMuscles(),
     ]);
 
     final s = results[2] as ({int currentStreak, int maxStreak});
@@ -122,6 +124,7 @@ class _StatsScreenState extends State<StatsScreen> {
           as List<({String exerciseName, int deltaReps, double weightKg})>;
       _muscleFatigue = results[13] as List<
           ({String muscleKey, double thisVol, double lastVol, double? thisRir, double? lastRir})>;
+      _sessionDominantMuscles = results[14] as Map<int, String>;
       _loading = false;
     });
 
@@ -167,6 +170,8 @@ class _StatsScreenState extends State<StatsScreen> {
                     repsProgress: _repsProgress,
                     muscleFatigue: _muscleFatigue,
                     currentStreak: _currentStreak,
+                    sessionHistory: _sessionHistory,
+                    sessionDominantMuscles: _sessionDominantMuscles,
                   ),
 
                   const SizedBox(height: 20),
@@ -191,7 +196,10 @@ class _StatsScreenState extends State<StatsScreen> {
                   const _SectionHeader(
                       icon: Icons.show_chart, title: 'Volumen e Intensidad'),
                   const SizedBox(height: 8),
-                  _VolumeRirCard(history: _sessionHistory),
+                  _VolumeRirCard(
+                    history: _sessionHistory,
+                    dominantMuscles: _sessionDominantMuscles,
+                  ),
 
                   const SizedBox(height: 20),
 
@@ -503,9 +511,10 @@ class _StatTile extends StatelessWidget {
 // ── Session volume card ───────────────────────────────────────────────────────
 
 class _VolumeRirCard extends StatelessWidget {
-  const _VolumeRirCard({required this.history});
+  const _VolumeRirCard({required this.history, required this.dominantMuscles});
   final List<({DateTime date, int sessionId, double volume, double? avgRir, int effectiveSets})>
       history;
+  final Map<int, String> dominantMuscles;
 
   @override
   Widget build(BuildContext context) {
@@ -577,29 +586,36 @@ class _VolumeRirCard extends StatelessWidget {
                       color: colors.outline,
                       fontWeight: FontWeight.w500)),
               const SizedBox(height: 6),
-              ...history.reversed.take(5).map((h) => Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 3),
-                    child: Row(
-                      children: [
-                        Text(_fmtDate(h.date),
-                            style: const TextStyle(fontSize: 13)),
-                        const Spacer(),
-                        if (h.avgRir != null) ...[
-                          Text('RIR ${h.avgRir!.toStringAsFixed(1)}',
-                              style: const TextStyle(fontSize: 12, color: Colors.orange)),
-                          const SizedBox(width: 10),
-                        ],
-                        Text(
-                          h.volume > 0 ? _fmtKg(h.volume) : 'Sin peso',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.bold,
-                            color: h.volume > 0 ? colors.primary : colors.outline,
-                          ),
-                        ),
+              ...history.reversed.take(5).map((h) {
+                final muscleKey = dominantMuscles[h.sessionId];
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 3),
+                  child: Row(
+                    children: [
+                      Text(_fmtDate(h.date),
+                          style: const TextStyle(fontSize: 13)),
+                      if (muscleKey != null) ...[
+                        const SizedBox(width: 8),
+                        _MuscleBadge(label: _muscleDisplayName(muscleKey), colors: colors),
                       ],
-                    ),
-                  )),
+                      const Spacer(),
+                      if (h.avgRir != null) ...[
+                        Text('RIR ${h.avgRir!.toStringAsFixed(1)}',
+                            style: const TextStyle(fontSize: 12, color: Colors.orange)),
+                        const SizedBox(width: 10),
+                      ],
+                      Text(
+                        h.volume > 0 ? _fmtKg(h.volume) : 'Sin peso',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: h.volume > 0 ? colors.primary : colors.outline,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }),
             ],
           ],
         ),
@@ -624,6 +640,33 @@ class _MiniChip extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
       ),
       child: Text(label, style: TextStyle(fontSize: 11, color: colors.onSurface)),
+    );
+  }
+}
+
+class _MuscleBadge extends StatelessWidget {
+  const _MuscleBadge({required this.label, required this.colors});
+  final String label;
+  final ColorScheme colors;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: colors.primary.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: colors.primary.withValues(alpha: 0.25)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w600,
+          color: colors.primary,
+          letterSpacing: 0.3,
+        ),
+      ),
     );
   }
 }
@@ -1237,6 +1280,8 @@ class _InsightsCard extends StatelessWidget {
     required this.repsProgress,
     required this.muscleFatigue,
     required this.currentStreak,
+    required this.sessionHistory,
+    required this.sessionDominantMuscles,
   });
 
   final ({double thisWeek, double lastWeek}) weekComparison;
@@ -1246,6 +1291,35 @@ class _InsightsCard extends StatelessWidget {
   final List<({String muscleKey, double thisVol, double lastVol, double? thisRir, double? lastRir})>
       muscleFatigue;
   final int currentStreak;
+  final List<({DateTime date, int sessionId, double volume, double? avgRir, int effectiveSets})>
+      sessionHistory;
+  final Map<int, String> sessionDominantMuscles;
+
+  /// Devuelve true si la mezcla de músculos dominantes entre las dos semanas
+  /// es significativamente distinta — en ese caso no tiene sentido comparar
+  /// volumen agregado entre ambas.
+  bool _muscleMixDiffers() {
+    final now = DateTime.now();
+    final thisMonday = now.subtract(Duration(days: now.weekday - 1));
+    final lastMonday = thisMonday.subtract(const Duration(days: 7));
+
+    final thisSet = <String>{};
+    final lastSet = <String>{};
+    for (final s in sessionHistory) {
+      final m = sessionDominantMuscles[s.sessionId];
+      if (m == null) continue;
+      if (!s.date.isBefore(thisMonday) && s.date.isBefore(thisMonday.add(const Duration(days: 7)))) {
+        thisSet.add(m);
+      } else if (!s.date.isBefore(lastMonday) && s.date.isBefore(thisMonday)) {
+        lastSet.add(m);
+      }
+    }
+    if (thisSet.isEmpty || lastSet.isEmpty) return false;
+    final overlap = thisSet.intersection(lastSet);
+    final union = thisSet.union(lastSet);
+    // Jaccard < 0.5 → composición suficientemente distinta
+    return overlap.length / union.length < 0.5;
+  }
 
   List<_Insight> _buildInsights() {
     final out = <_Insight>[];
@@ -1262,18 +1336,24 @@ class _InsightsCard extends StatelessWidget {
       ));
     }
 
-    // 2. Cambio % de volumen semanal
+    // 2. Cambio % de volumen semanal — sólo si la mezcla de músculos es comparable
     if (weekComparison.lastWeek > 0) {
       final pct = ((weekComparison.thisWeek - weekComparison.lastWeek) /
               weekComparison.lastWeek *
               100)
           .round();
+      final mixDiffers = _muscleMixDiffers();
       if (pct >= 5) {
         out.add(_Insight(
             Icons.stacked_bar_chart, '+$pct% volumen esta semana', _InsightTone.positive));
-      } else if (pct <= -10) {
+      } else if (pct <= -10 && !mixDiffers) {
         out.add(_Insight(
             Icons.stacked_bar_chart, '$pct% volumen vs semana pasada', _InsightTone.warning));
+      } else if (pct <= -10 && mixDiffers) {
+        out.add(const _Insight(
+            Icons.swap_horiz,
+            'Volumen menor: grupos musculares distintos a la semana pasada',
+            _InsightTone.neutral));
       }
     }
 

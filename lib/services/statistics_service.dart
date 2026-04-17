@@ -418,6 +418,59 @@ class StatisticsService {
     };
   }
 
+  // ── Músculo dominante por sesión ──────────────────────────────────────────────
+
+  /// Devuelve el grupo muscular dominante de cada sesión.
+  /// Criterio principal: músculo con mayor volumen (reps × peso) en la sesión.
+  /// Fallback (sin peso registrado): músculo con mayor número de series.
+  Future<Map<int, String>> sessionDominantMuscles() async {
+    final db = await DatabaseHelper.instance.database;
+    final rows = await db.rawQuery('''
+      SELECT s.${DbConstants.cSeId} AS session_id,
+             e.${DbConstants.cExMuscleCategory} AS muscle,
+             COALESCE(SUM(
+               CASE WHEN ss.${DbConstants.cSsReps} IS NOT NULL
+                    AND ss.${DbConstants.cSsWeightKg} IS NOT NULL
+               THEN ss.${DbConstants.cSsReps} * ss.${DbConstants.cSsWeightKg}
+               ELSE 0 END
+             ), 0) AS volume,
+             COUNT(ss.${DbConstants.cSsId}) AS set_count
+      FROM ${DbConstants.tSessions} s
+      JOIN ${DbConstants.tSessionExercises} sx
+        ON sx.${DbConstants.cSxSessionId} = s.${DbConstants.cSeId}
+      JOIN ${DbConstants.tExercises} e
+        ON sx.${DbConstants.cSxExerciseId} = e.${DbConstants.cExId}
+      LEFT JOIN ${DbConstants.tSessionSets} ss
+        ON ss.${DbConstants.cSsSessionExerciseId} = sx.${DbConstants.cSxId}
+      GROUP BY s.${DbConstants.cSeId}, e.${DbConstants.cExMuscleCategory}
+    ''');
+
+    final perSession = <int, List<({String muscle, double volume, int sets})>>{};
+    for (final r in rows) {
+      final sid = r['session_id'] as int;
+      perSession.putIfAbsent(sid, () => []).add((
+        muscle: r['muscle'] as String,
+        volume: (r['volume'] as num).toDouble(),
+        sets: (r['set_count'] as num).toInt(),
+      ));
+    }
+
+    final result = <int, String>{};
+    perSession.forEach((sid, entries) {
+      final byVolume = entries.where((e) => e.volume > 0).toList();
+      if (byVolume.isNotEmpty) {
+        byVolume.sort((a, b) => b.volume.compareTo(a.volume));
+        result[sid] = byVolume.first.muscle;
+      } else {
+        final bySets = [...entries]..sort((a, b) => b.sets.compareTo(a.sets));
+        if (bySets.isNotEmpty && bySets.first.sets > 0) {
+          result[sid] = bySets.first.muscle;
+        }
+      }
+    });
+    return result;
+  }
+
   // ── Músculo más trabajado ─────────────────────────────────────────────────────
 
   /// Categoría muscular con mayor volumen en el rango dado.
