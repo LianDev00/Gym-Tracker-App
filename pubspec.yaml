@@ -1,9 +1,9 @@
 name: gym_tracker
 description: App de seguimiento de entrenamiento en el gimnasio.
-version: 1.2.0+4
+version: 1.2.0+5
 
 environment:
-  sdk: '>=3.0.0 <4.0.0'
+  sdk: ">=3.0.0 <4.0.0"
 
 dependencies:
   flutter:
