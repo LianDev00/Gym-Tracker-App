@@ -2,6 +2,8 @@
 
 Aplicación móvil de seguimiento de entrenamiento desarrollada en Flutter. Permite registrar sesiones de gimnasio día a día, consultar el historial completo con detalle de series, y analizar el progreso mediante estadísticas basadas en volumen y RIR.
 
+<img width="720" height="1600" alt="Img_show" src="https://github.com/user-attachments/assets/b1d56470-2f09-4c2d-85ba-293a8525f9a5" />
+
 ---
 
 ## Tecnologías
@@ -139,7 +141,7 @@ flutter doctor
 
 ```bash
 # 1. Clonar el repositorio
-git clone <url-del-repositorio>
+git clone https://github.com/LianDev00/Gym-Tracker-App.git
 cd gym-tracker
 
 # 2. Instalar dependencias
