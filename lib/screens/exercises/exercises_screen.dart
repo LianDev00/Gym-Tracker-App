@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/widgets/info_button.dart';
 import '../../models/exercise.dart';
 import '../../models/muscle_category.dart';
 import '../../services/exercise_service.dart';
@@ -100,6 +101,9 @@ class _ExercisesScreenState extends State<ExercisesScreen> {
       appBar: AppBar(
         title: const Text('Ejercicios'),
         centerTitle: false,
+        actions: const [
+          InfoButton(text: 'Lista de ejercicios disponibles. Puedes crear nuevos y reutilizarlos en tus sesiones.'),
+        ],
       ),
       body: Column(
         children: [

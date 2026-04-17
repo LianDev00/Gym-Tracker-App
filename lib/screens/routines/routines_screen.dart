@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/widgets/info_button.dart';
 import '../../models/exercise.dart';
 import '../../models/muscle_category.dart';
 import '../../models/routine.dart';
@@ -76,7 +77,13 @@ class _RoutinesScreenState extends State<RoutinesScreen> {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: AppBar(title: const Text('Rutinas'), centerTitle: false),
+      appBar: AppBar(
+        title: const Text('Rutinas'),
+        centerTitle: false,
+        actions: const [
+          InfoButton(text: 'Crea rutinas con ejercicios y objetivos. Luego puedes cargarlas rápidamente en una sesión.'),
+        ],
+      ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _routines.isEmpty

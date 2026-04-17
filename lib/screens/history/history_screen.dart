@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/widgets/info_button.dart';
 import '../../models/session.dart';
 import '../../services/exercise_service.dart';
 import '../../services/session_service.dart';
@@ -148,6 +149,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
         title: const Text('Historial'),
         centerTitle: false,
         actions: [
+          const InfoButton(text: 'Revisa tus sesiones pasadas. Toca una para ver ejercicios y series en detalle.'),
           IconButton(icon: const Icon(Icons.refresh), onPressed: _load),
         ],
       ),

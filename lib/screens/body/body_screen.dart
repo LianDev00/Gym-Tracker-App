@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import '../../core/widgets/info_button.dart';
 import '../../core/theme/glass_kit.dart';
 import '../../models/body_entry.dart';
 import '../../models/body_measurement.dart';
@@ -119,7 +120,10 @@ class _BodyScreenState extends State<BodyScreen> {
       appBar: AppBar(
         title: const Text('Cuerpo'),
         centerTitle: false,
-        actions: [IconButton(icon: const Icon(Icons.refresh), onPressed: _load)],
+        actions: [
+          const InfoButton(text: 'Visualiza el progreso de tu cuerpo y métricas físicas registradas.'),
+          IconButton(icon: const Icon(Icons.refresh), onPressed: _load),
+        ],
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())

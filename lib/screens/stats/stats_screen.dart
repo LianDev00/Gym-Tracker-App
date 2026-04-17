@@ -1,9 +1,30 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import '../../core/widgets/info_button.dart';
 import '../../models/exercise.dart';
 import '../../models/muscle_category.dart';
 import '../../services/exercise_service.dart';
 import '../../services/statistics_service.dart';
+
+String _fmtKg(double v) {
+  final n = v.round();
+  final s = n.toString();
+  final start = s.length % 3;
+  final buf = StringBuffer();
+  if (start > 0) buf.write(s.substring(0, start));
+  for (int i = start; i < s.length; i += 3) {
+    if (i > 0) buf.write(',');
+    buf.write(s.substring(i, i + 3));
+  }
+  return '$buf kg';
+}
+
+String _muscleDisplayName(String key) {
+  for (final cat in MuscleCategory.values) {
+    if (cat.name == key) return cat.displayName;
+  }
+  return key;
+}
 
 class StatsScreen extends StatefulWidget {
   const StatsScreen({super.key});
@@ -26,9 +47,17 @@ class _StatsScreenState extends State<StatsScreen> {
   String? _weekMuscle;
   int _effectiveSets = 0;
   ({double thisWeek, double lastWeek}) _weekComparison = (thisWeek: 0, lastWeek: 0);
+  ({double? thisWeek, double? lastWeek}) _rirComparison = (thisWeek: null, lastWeek: null);
+  ({int thisWeek, int lastWeek}) _effSetsComparison = (thisWeek: 0, lastWeek: 0);
 
-  // Historial de volumen por sesión
-  List<({DateTime date, double totalVolume, int sessionId})> _sessionHistory = [];
+  // Historial combinado volumen + RIR por sesión
+  List<({DateTime date, int sessionId, double volume, double? avgRir, int effectiveSets})>
+      _sessionHistory = [];
+
+  // Insights
+  List<({String exerciseName, int deltaReps, double weightKg})> _repsProgress = [];
+  List<({String muscleKey, double thisVol, double lastVol, double? thisRir, double? lastRir})>
+      _muscleFatigue = [];
 
   // Por ejercicio
   List<Exercise> _exercises = [];
@@ -60,10 +89,14 @@ class _StatsScreenState extends State<StatsScreen> {
       _stats.mostWorkedMuscle(monday, nextMonday),
       _stats.effectiveSets(monday, nextMonday),
       _stats.weekComparison(now),
-      _stats.sessionVolumeHistory(),
+      _stats.sessionVolumeAndRirHistory(),
       _exerciseService.getAll(),
       _stats.personalRecords(),
       _stats.volumeByMuscle(monday, nextMonday),
+      _stats.weeklyRirComparison(now),
+      _stats.weeklyEffectiveSetsComparison(now),
+      _stats.recentRepsProgress(),
+      _stats.weeklyMuscleFatigue(now),
     ]);
 
     final s = results[2] as ({int currentStreak, int maxStreak});
@@ -77,12 +110,18 @@ class _StatsScreenState extends State<StatsScreen> {
       _weekMuscle = results[3] as String?;
       _effectiveSets = results[4] as int;
       _weekComparison = results[5] as ({double thisWeek, double lastWeek});
-      _sessionHistory = results[6]
-          as List<({DateTime date, double totalVolume, int sessionId})>;
+      _sessionHistory = results[6] as List<
+          ({DateTime date, int sessionId, double volume, double? avgRir, int effectiveSets})>;
       _exercises = exercises;
       _prs = results[8]
           as List<({int exerciseId, String exerciseName, double maxWeightKg, DateTime date})>;
       _muscleVolume = results[9] as Map<String, double>;
+      _rirComparison = results[10] as ({double? thisWeek, double? lastWeek});
+      _effSetsComparison = results[11] as ({int thisWeek, int lastWeek});
+      _repsProgress = results[12]
+          as List<({String exerciseName, int deltaReps, double weightKg})>;
+      _muscleFatigue = results[13] as List<
+          ({String muscleKey, double thisVol, double lastVol, double? thisRir, double? lastRir})>;
       _loading = false;
     });
 
@@ -105,7 +144,10 @@ class _StatsScreenState extends State<StatsScreen> {
       appBar: AppBar(
         title: const Text('Estadísticas'),
         centerTitle: false,
-        actions: [IconButton(icon: const Icon(Icons.refresh), onPressed: _load)],
+        actions: [
+          const InfoButton(text: 'Analiza tu progreso: volumen, músculos trabajados, evolución y récords personales.'),
+          IconButton(icon: const Icon(Icons.refresh), onPressed: _load),
+        ],
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -114,7 +156,22 @@ class _StatsScreenState extends State<StatsScreen> {
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(12, 12, 12, 100),
                 children: [
-                  // ── 1. Resumen ────────────────────────────────────────────
+                  // ── 1. Insights automáticos (elemento principal) ──────────
+                  const _SectionHeader(
+                      icon: Icons.insights, title: 'Tu Progreso'),
+                  const SizedBox(height: 8),
+                  _InsightsCard(
+                    weekComparison: _weekComparison,
+                    rirComparison: _rirComparison,
+                    effSetsComparison: _effSetsComparison,
+                    repsProgress: _repsProgress,
+                    muscleFatigue: _muscleFatigue,
+                    currentStreak: _currentStreak,
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  // ── 2. Resumen ────────────────────────────────────────────
                   const _SectionHeader(icon: Icons.bar_chart, title: 'Resumen'),
                   const SizedBox(height: 8),
                   _SummaryCard(
@@ -125,15 +182,16 @@ class _StatsScreenState extends State<StatsScreen> {
                     weekMuscle: _weekMuscle,
                     effectiveSets: _effectiveSets,
                     weekComparison: _weekComparison,
+                    rirComparison: _rirComparison,
                   ),
 
                   const SizedBox(height: 20),
 
-                  // ── 2. Historial de volumen ───────────────────────────────
+                  // ── 3. Volumen + RIR por sesión ───────────────────────────
                   const _SectionHeader(
-                      icon: Icons.show_chart, title: 'Volumen por Sesión'),
+                      icon: Icons.show_chart, title: 'Volumen e Intensidad'),
                   const SizedBox(height: 8),
-                  _SessionVolumeCard(history: _sessionHistory),
+                  _VolumeRirCard(history: _sessionHistory),
 
                   const SizedBox(height: 20),
 
@@ -213,6 +271,7 @@ class _SummaryCard extends StatelessWidget {
     required this.weekMuscle,
     required this.effectiveSets,
     required this.weekComparison,
+    required this.rirComparison,
   });
 
   final double weekVolume;
@@ -222,11 +281,9 @@ class _SummaryCard extends StatelessWidget {
   final String? weekMuscle;
   final int effectiveSets;
   final ({double thisWeek, double lastWeek}) weekComparison;
+  final ({double? thisWeek, double? lastWeek}) rirComparison;
 
-  String _fmtVol(double v) {
-    if (v >= 1000) return '${(v / 1000).toStringAsFixed(1)} t';
-    return '${v.toStringAsFixed(0)} kg';
-  }
+  String _fmtVol(double v) => _fmtKg(v);
 
   @override
   Widget build(BuildContext context) {
@@ -338,6 +395,34 @@ class _SummaryCard extends StatelessWidget {
                 ),
               ],
             ),
+
+            const SizedBox(height: 12),
+
+            // RIR promedio con comparación
+            Row(
+              children: [
+                Expanded(
+                  child: _StatTile(
+                    label: 'RIR promedio',
+                    value: rirComparison.thisWeek == null
+                        ? '—'
+                        : rirComparison.thisWeek!.toStringAsFixed(1),
+                    icon: Icons.bolt,
+                    colors: colors,
+                    subtitle: rirComparison.lastWeek == null
+                        ? 'esta semana'
+                        : 'vs ${rirComparison.lastWeek!.toStringAsFixed(1)} sem. ant.',
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 10),
+            Text(
+              'Volumen = peso × reps × series',
+              style: TextStyle(fontSize: 10, color: colors.outlineVariant),
+              textAlign: TextAlign.center,
+            ),
           ],
         ),
       ),
@@ -417,14 +502,16 @@ class _StatTile extends StatelessWidget {
 
 // ── Session volume card ───────────────────────────────────────────────────────
 
-class _SessionVolumeCard extends StatelessWidget {
-  const _SessionVolumeCard({required this.history});
-  final List<({DateTime date, double totalVolume, int sessionId})> history;
+class _VolumeRirCard extends StatelessWidget {
+  const _VolumeRirCard({required this.history});
+  final List<({DateTime date, int sessionId, double volume, double? avgRir, int effectiveSets})>
+      history;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    final withVolume = history.where((h) => h.totalVolume > 0).toList();
+    final withVolume = history.where((h) => h.volume > 0).toList();
+    final withRir = history.where((h) => h.avgRir != null).toList();
 
     if (history.isEmpty) {
       return Card(
@@ -438,28 +525,35 @@ class _SessionVolumeCard extends StatelessWidget {
       );
     }
 
+    final avgVol = withVolume.isEmpty
+        ? 0.0
+        : withVolume.map((h) => h.volume).reduce((a, b) => a + b) / withVolume.length;
+    final avgRir = withRir.isEmpty
+        ? null
+        : withRir.map((h) => h.avgRir!).reduce((a, b) => a + b) / withRir.length;
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
               children: [
                 _MiniChip('${history.length} sesiones', colors),
-                const SizedBox(width: 6),
                 if (withVolume.isNotEmpty)
-                  _MiniChip(
-                    'Prom. ${_fmtVol(withVolume.map((h) => h.totalVolume).reduce((a, b) => a + b) / withVolume.length)}',
-                    colors,
-                  ),
+                  _MiniChip('Prom. ${_fmtKg(avgVol)}', colors),
+                if (avgRir != null)
+                  _MiniChip('RIR prom. ${avgRir.toStringAsFixed(1)}', colors),
               ],
             ),
             const SizedBox(height: 12),
             if (withVolume.length >= 2)
               SizedBox(
-                height: 180,
-                child: _VolumeLineChart(data: withVolume, colors: colors),
+                height: 200,
+                child: _VolumeRirChart(data: withVolume, colors: colors),
               )
             else
               Center(
@@ -469,6 +563,12 @@ class _SessionVolumeCard extends StatelessWidget {
                   textAlign: TextAlign.center,
                 ),
               ),
+            const SizedBox(height: 8),
+            Text(
+              'Más volumen con mismo RIR = progreso · RIR bajando sin subir reps/peso = fatiga',
+              style: TextStyle(fontSize: 10, color: colors.outlineVariant),
+              textAlign: TextAlign.center,
+            ),
             if (history.isNotEmpty) ...[
               const SizedBox(height: 12),
               Text('Últimas sesiones',
@@ -484,14 +584,17 @@ class _SessionVolumeCard extends StatelessWidget {
                         Text(_fmtDate(h.date),
                             style: const TextStyle(fontSize: 13)),
                         const Spacer(),
+                        if (h.avgRir != null) ...[
+                          Text('RIR ${h.avgRir!.toStringAsFixed(1)}',
+                              style: const TextStyle(fontSize: 12, color: Colors.orange)),
+                          const SizedBox(width: 10),
+                        ],
                         Text(
-                          h.totalVolume > 0 ? _fmtVol(h.totalVolume) : 'Sin peso',
+                          h.volume > 0 ? _fmtKg(h.volume) : 'Sin peso',
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.bold,
-                            color: h.totalVolume > 0
-                                ? colors.primary
-                                : colors.outline,
+                            color: h.volume > 0 ? colors.primary : colors.outline,
                           ),
                         ),
                       ],
@@ -504,7 +607,6 @@ class _SessionVolumeCard extends StatelessWidget {
     );
   }
 
-  String _fmtVol(double v) => '${v.toStringAsFixed(0)} kg';
   String _fmtDate(DateTime d) => '${d.day}/${d.month}/${d.year}';
 }
 
@@ -561,7 +663,7 @@ class _MuscleVolumeCard extends StatelessWidget {
           children: muscleVolume.entries.map((e) {
             final ratio = e.value / maxVol;
             // Traduce muscle_category key → nombre mostrable
-            final name = _muscleName(e.key);
+            final name = _muscleDisplayName(e.key);
             return Padding(
               padding: const EdgeInsets.symmetric(vertical: 5),
               child: Column(
@@ -602,13 +704,6 @@ class _MuscleVolumeCard extends StatelessWidget {
     );
   }
 
-  String _muscleName(String key) {
-    // Intenta encontrar el MuscleCategory correspondiente por nombre
-    for (final cat in MuscleCategory.values) {
-      if (cat.name == key) return cat.displayName;
-    }
-    return key;
-  }
 }
 
 // ── Exercise progress card ────────────────────────────────────────────────────
@@ -810,93 +905,225 @@ class _PersonalRecordsCard extends StatelessWidget {
 
 // ── Volume line chart ─────────────────────────────────────────────────────────
 
-class _VolumeLineChart extends StatelessWidget {
-  const _VolumeLineChart({required this.data, required this.colors});
-  final List<({DateTime date, double totalVolume, int sessionId})> data;
+class _VolumeRirChart extends StatelessWidget {
+  const _VolumeRirChart({required this.data, required this.colors});
+  final List<({DateTime date, int sessionId, double volume, double? avgRir, int effectiveSets})>
+      data;
   final ColorScheme colors;
 
   @override
   Widget build(BuildContext context) {
-    final spots = data
+    const double leftReserved = 48;
+    const double rightReserved = 28;
+    const double bottomReserved = 24;
+    const rirColor = Colors.orange;
+
+    final volumeSpots = data
         .asMap()
         .entries
-        .map((e) => FlSpot(e.key.toDouble(), e.value.totalVolume))
+        .map((e) => FlSpot(e.key.toDouble(), e.value.volume))
         .toList();
-    final values = data.map((d) => d.totalVolume);
-    final minY = values.reduce((a, b) => a < b ? a : b);
-    final maxY = values.reduce((a, b) => a > b ? a : b);
-    final yPad = (maxY - minY) * 0.2 + 10;
+    final rirSpots = <FlSpot>[];
+    for (final e in data.asMap().entries) {
+      final r = e.value.avgRir;
+      if (r != null) rirSpots.add(FlSpot(e.key.toDouble(), r));
+    }
 
-    return LineChart(
-      LineChartData(
-        gridData: FlGridData(
-          show: true,
-          getDrawingHorizontalLine: (v) =>
-              FlLine(color: colors.outlineVariant.withValues(alpha: 0.3), strokeWidth: 1),
-          drawVerticalLine: false,
+    final values = data.map((d) => d.volume);
+    final minVol = values.reduce((a, b) => a < b ? a : b);
+    final maxVol = values.reduce((a, b) => a > b ? a : b);
+    final yPad = (maxVol - minVol) * 0.2 + 10;
+    const minX = 0.0;
+    final maxX = (data.length - 1).toDouble();
+
+    return Column(
+      children: [
+        // Leyenda
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _LegendDot(color: colors.primary, label: 'Volumen (kg)'),
+            const SizedBox(width: 14),
+            const _LegendDot(color: rirColor, label: 'RIR promedio'),
+          ],
         ),
-        borderData: FlBorderData(show: false),
-        titlesData: FlTitlesData(
-          leftTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              reservedSize: 48,
-              getTitlesWidget: (v, _) {
-                final label = v >= 1000
-                    ? '${(v / 1000).toStringAsFixed(0)}k'
-                    : v.toStringAsFixed(0);
-                return Text(label,
-                    style: TextStyle(fontSize: 10, color: colors.outline));
-              },
-            ),
+        const SizedBox(height: 8),
+        Expanded(
+          child: Stack(
+            children: [
+              // Capa 1: volumen con eje izquierdo
+              LineChart(
+                LineChartData(
+                  minX: minX,
+                  maxX: maxX,
+                  minY: (minVol - yPad).clamp(0, double.infinity),
+                  maxY: maxVol + yPad,
+                  gridData: FlGridData(
+                    show: true,
+                    getDrawingHorizontalLine: (v) => FlLine(
+                        color: colors.outlineVariant.withValues(alpha: 0.3),
+                        strokeWidth: 1),
+                    drawVerticalLine: false,
+                  ),
+                  borderData: FlBorderData(show: false),
+                  titlesData: FlTitlesData(
+                    topTitles: const AxisTitles(
+                        sideTitles: SideTitles(showTitles: false)),
+                    rightTitles: const AxisTitles(
+                        sideTitles: SideTitles(
+                            showTitles: false, reservedSize: rightReserved)),
+                    leftTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        reservedSize: leftReserved,
+                        getTitlesWidget: (v, _) {
+                          final label = v >= 1000
+                              ? '${(v / 1000).toStringAsFixed(0)}k'
+                              : v.toStringAsFixed(0);
+                          return Text(label,
+                              style: TextStyle(
+                                  fontSize: 10, color: colors.outline));
+                        },
+                      ),
+                    ),
+                    bottomTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        reservedSize: bottomReserved,
+                        interval:
+                            (data.length / 4).ceilToDouble().clamp(1, 9999),
+                        getTitlesWidget: (v, _) {
+                          final i = v.toInt();
+                          if (i < 0 || i >= data.length) {
+                            return const SizedBox();
+                          }
+                          final d = data[i].date;
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text('${d.day}/${d.month}',
+                                style: TextStyle(
+                                    fontSize: 10, color: colors.outline)),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                  lineTouchData: LineTouchData(
+                    touchTooltipData: LineTouchTooltipData(
+                      getTooltipItems: (spots) => spots.map((s) {
+                        final i = s.x.toInt();
+                        final d = data[i].date;
+                        final rir = data[i].avgRir;
+                        final rirLine = rir == null
+                            ? ''
+                            : '\nRIR ${rir.toStringAsFixed(1)}';
+                        return LineTooltipItem(
+                          '${d.day}/${d.month}\n${s.y.toStringAsFixed(0)} kg$rirLine',
+                          TextStyle(color: colors.onSurface, fontSize: 11),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                  lineBarsData: [
+                    LineChartBarData(
+                      spots: volumeSpots,
+                      isCurved: true,
+                      color: colors.primary,
+                      barWidth: 2.5,
+                      dotData: FlDotData(
+                        getDotPainter: (_, __, ___, ____) => FlDotCirclePainter(
+                            radius: 3.5,
+                            color: colors.primary,
+                            strokeWidth: 0),
+                      ),
+                      belowBarData: BarAreaData(
+                        show: true,
+                        color: colors.primary.withValues(alpha: 0.12),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Capa 2: RIR con eje derecho
+              if (rirSpots.length >= 2)
+                IgnorePointer(
+                  child: LineChart(
+                    LineChartData(
+                      minX: minX,
+                      maxX: maxX,
+                      minY: 0,
+                      maxY: 10,
+                      gridData: const FlGridData(show: false),
+                      borderData: FlBorderData(show: false),
+                      titlesData: FlTitlesData(
+                        topTitles: const AxisTitles(
+                            sideTitles: SideTitles(showTitles: false)),
+                        leftTitles: const AxisTitles(
+                            sideTitles: SideTitles(
+                                showTitles: false, reservedSize: leftReserved)),
+                        bottomTitles: const AxisTitles(
+                            sideTitles: SideTitles(
+                                showTitles: false,
+                                reservedSize: bottomReserved)),
+                        rightTitles: AxisTitles(
+                          sideTitles: SideTitles(
+                            showTitles: true,
+                            reservedSize: rightReserved,
+                            interval: 2,
+                            getTitlesWidget: (v, _) => Padding(
+                              padding: const EdgeInsets.only(left: 4),
+                              child: Text(v.toInt().toString(),
+                                  style: const TextStyle(
+                                      fontSize: 10, color: rirColor)),
+                            ),
+                          ),
+                        ),
+                      ),
+                      lineBarsData: [
+                        LineChartBarData(
+                          spots: rirSpots,
+                          isCurved: true,
+                          color: rirColor,
+                          barWidth: 2,
+                          dashArray: const [6, 4],
+                          dotData: FlDotData(
+                            getDotPainter: (_, __, ___, ____) =>
+                                FlDotCirclePainter(
+                                    radius: 2.5,
+                                    color: rirColor,
+                                    strokeWidth: 0),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
           ),
-          bottomTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              interval: (data.length / 4).ceilToDouble().clamp(1, 9999),
-              getTitlesWidget: (v, _) {
-                final i = v.toInt();
-                if (i < 0 || i >= data.length) return const SizedBox();
-                final d = data[i].date;
-                return Text('${d.day}/${d.month}',
-                    style: TextStyle(fontSize: 10, color: colors.outline));
-              },
-            ),
-          ),
-          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
         ),
-        minY: (minY - yPad).clamp(0, double.infinity),
-        maxY: maxY + yPad,
-        lineTouchData: LineTouchData(
-          touchTooltipData: LineTouchTooltipData(
-            getTooltipItems: (spots) => spots.map((s) {
-              final i = s.x.toInt();
-              final d = data[i].date;
-              return LineTooltipItem(
-                '${d.day}/${d.month}\n${s.y.toStringAsFixed(0)} kg',
-                TextStyle(color: colors.onSurface, fontSize: 11),
-              );
-            }).toList(),
-          ),
+      ],
+    );
+  }
+}
+
+class _LegendDot extends StatelessWidget {
+  const _LegendDot({required this.color, required this.label});
+  final Color color;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
         ),
-        lineBarsData: [
-          LineChartBarData(
-            spots: spots,
-            isCurved: true,
-            color: colors.primary,
-            barWidth: 2.5,
-            dotData: FlDotData(
-              getDotPainter: (_, __, ___, ____) =>
-                  FlDotCirclePainter(radius: 3.5, color: colors.primary, strokeWidth: 0),
-            ),
-            belowBarData: BarAreaData(
-              show: true,
-              color: colors.primary.withValues(alpha: 0.12),
-            ),
-          ),
-        ],
-      ),
+        const SizedBox(width: 5),
+        Text(label, style: const TextStyle(fontSize: 11)),
+      ],
     );
   }
 }
@@ -983,6 +1210,191 @@ class _WeightLineChart extends StatelessWidget {
             belowBarData: BarAreaData(
               show: true,
               color: colors.secondary.withValues(alpha: 0.12),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Insights card ─────────────────────────────────────────────────────────────
+
+enum _InsightTone { positive, neutral, warning }
+
+class _Insight {
+  const _Insight(this.icon, this.text, this.tone);
+  final IconData icon;
+  final String text;
+  final _InsightTone tone;
+}
+
+class _InsightsCard extends StatelessWidget {
+  const _InsightsCard({
+    required this.weekComparison,
+    required this.rirComparison,
+    required this.effSetsComparison,
+    required this.repsProgress,
+    required this.muscleFatigue,
+    required this.currentStreak,
+  });
+
+  final ({double thisWeek, double lastWeek}) weekComparison;
+  final ({double? thisWeek, double? lastWeek}) rirComparison;
+  final ({int thisWeek, int lastWeek}) effSetsComparison;
+  final List<({String exerciseName, int deltaReps, double weightKg})> repsProgress;
+  final List<({String muscleKey, double thisVol, double lastVol, double? thisRir, double? lastRir})>
+      muscleFatigue;
+  final int currentStreak;
+
+  List<_Insight> _buildInsights() {
+    final out = <_Insight>[];
+
+    // 1. Rep PRs — señal más fuerte de progreso
+    for (final p in repsProgress.take(2)) {
+      final kgLabel = p.weightKg == p.weightKg.truncateToDouble()
+          ? p.weightKg.toStringAsFixed(0)
+          : p.weightKg.toStringAsFixed(1);
+      out.add(_Insight(
+        Icons.trending_up,
+        '+${p.deltaReps} reps en ${p.exerciseName} ($kgLabel kg)',
+        _InsightTone.positive,
+      ));
+    }
+
+    // 2. Cambio % de volumen semanal
+    if (weekComparison.lastWeek > 0) {
+      final pct = ((weekComparison.thisWeek - weekComparison.lastWeek) /
+              weekComparison.lastWeek *
+              100)
+          .round();
+      if (pct >= 5) {
+        out.add(_Insight(
+            Icons.stacked_bar_chart, '+$pct% volumen esta semana', _InsightTone.positive));
+      } else if (pct <= -10) {
+        out.add(_Insight(
+            Icons.stacked_bar_chart, '$pct% volumen vs semana pasada', _InsightTone.warning));
+      }
+    }
+
+    // 3. Fatiga por grupo muscular (RIR cae ≥1 y volumen no subió)
+    for (final m in muscleFatigue) {
+      final tr = m.thisRir;
+      final lr = m.lastRir;
+      if (tr == null || lr == null) continue;
+      if (lr - tr >= 1.0 && m.thisVol <= m.lastVol * 1.05) {
+        out.add(_Insight(
+          Icons.warning_amber_rounded,
+          'Fatiga detectada en ${_muscleDisplayName(m.muscleKey)}',
+          _InsightTone.warning,
+        ));
+      }
+    }
+
+    // 4. Cambio de intensidad (RIR)
+    final tr = rirComparison.thisWeek;
+    final lr = rirComparison.lastWeek;
+    if (tr != null && lr != null) {
+      final delta = tr - lr;
+      if (delta <= -0.8) {
+        out.add(const _Insight(
+            Icons.local_fire_department,
+            'Entrenamiento más intenso que la semana pasada',
+            _InsightTone.positive));
+      } else if (delta >= 0.8) {
+        out.add(const _Insight(
+            Icons.nightlight_round,
+            'Entrenamiento menos intenso esta semana',
+            _InsightTone.neutral));
+      }
+    }
+
+    // 5. Series efectivas
+    final ds = effSetsComparison.thisWeek - effSetsComparison.lastWeek;
+    if (ds >= 3) {
+      out.add(_Insight(
+          Icons.check_circle_outline,
+          '+$ds series efectivas vs semana pasada',
+          _InsightTone.positive));
+    } else if (ds <= -3 && effSetsComparison.lastWeek > 0) {
+      out.add(_Insight(
+          Icons.remove_circle_outline,
+          '$ds series efectivas vs semana pasada',
+          _InsightTone.warning));
+    }
+
+    // 6. Racha
+    if (currentStreak >= 3) {
+      out.add(_Insight(Icons.local_fire_department,
+          'Racha de $currentStreak días — consistencia fuerte', _InsightTone.positive));
+    }
+
+    return out.take(5).toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final insights = _buildInsights();
+
+    if (insights.isEmpty) {
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Center(
+            child: Text(
+              'Registra más sesiones para ver insights automáticos',
+              style: TextStyle(color: colors.outline),
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          children: insights
+              .map((i) => Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: _InsightTile(insight: i, colors: colors),
+                  ))
+              .toList(),
+        ),
+      ),
+    );
+  }
+}
+
+class _InsightTile extends StatelessWidget {
+  const _InsightTile({required this.insight, required this.colors});
+  final _Insight insight;
+  final ColorScheme colors;
+
+  @override
+  Widget build(BuildContext context) {
+    final (bg, fg) = switch (insight.tone) {
+      _InsightTone.positive => (Colors.green.withValues(alpha: 0.12), Colors.green.shade700),
+      _InsightTone.warning => (colors.error.withValues(alpha: 0.12), colors.error),
+      _InsightTone.neutral => (colors.surfaceContainerHighest, colors.onSurface),
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          Icon(insight.icon, size: 18, color: fg),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              insight.text,
+              style: TextStyle(
+                  fontSize: 13, color: fg, fontWeight: FontWeight.w500),
             ),
           ),
         ],

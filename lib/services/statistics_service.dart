@@ -233,6 +233,191 @@ class StatisticsService {
     return (currentStreak: current, maxStreak: max);
   }
 
+  // ── Historial combinado volumen + RIR por sesión ──────────────────────────────
+
+  /// Por sesión: volumen total, RIR promedio y series efectivas (RIR ≤ 3).
+  Future<List<({DateTime date, int sessionId, double volume, double? avgRir, int effectiveSets})>>
+      sessionVolumeAndRirHistory() async {
+    final db = await DatabaseHelper.instance.database;
+    final rows = await db.rawQuery('''
+      SELECT s.${DbConstants.cSeDate},
+             s.${DbConstants.cSeId},
+             COALESCE(SUM(
+               CASE WHEN ss.${DbConstants.cSsReps} IS NOT NULL
+                    AND ss.${DbConstants.cSsWeightKg} IS NOT NULL
+               THEN ss.${DbConstants.cSsReps} * ss.${DbConstants.cSsWeightKg}
+               ELSE 0 END
+             ), 0) AS volume,
+             AVG(ss.${DbConstants.cSsRir}) AS avg_rir,
+             SUM(CASE WHEN ss.${DbConstants.cSsRir} IS NOT NULL
+                      AND ss.${DbConstants.cSsRir} <= 3
+                 THEN 1 ELSE 0 END) AS effective_sets
+      FROM ${DbConstants.tSessions} s
+      LEFT JOIN ${DbConstants.tSessionExercises} sx
+        ON sx.${DbConstants.cSxSessionId} = s.${DbConstants.cSeId}
+      LEFT JOIN ${DbConstants.tSessionSets} ss
+        ON ss.${DbConstants.cSsSessionExerciseId} = sx.${DbConstants.cSxId}
+      GROUP BY s.${DbConstants.cSeId}
+      ORDER BY s.${DbConstants.cSeDate}
+    ''');
+    return rows.map((r) {
+      final avg = r['avg_rir'];
+      return (
+        date: DateTime.parse(r[DbConstants.cSeDate] as String),
+        sessionId: r[DbConstants.cSeId] as int,
+        volume: (r['volume'] as num).toDouble(),
+        avgRir: avg == null ? null : (avg as num).toDouble(),
+        effectiveSets: (r['effective_sets'] as num?)?.toInt() ?? 0,
+      );
+    }).toList();
+  }
+
+  // ── Comparación semanal RIR ───────────────────────────────────────────────────
+
+  /// RIR promedio de esta semana vs la anterior.
+  Future<({double? thisWeek, double? lastWeek})> weeklyRirComparison(DateTime now) async {
+    final thisMonday = now.subtract(Duration(days: now.weekday - 1));
+    final lastMonday = thisMonday.subtract(const Duration(days: 7));
+    final thisRir = await _avgRirBetween(thisMonday, thisMonday.add(const Duration(days: 7)));
+    final lastRir = await _avgRirBetween(lastMonday, lastMonday.add(const Duration(days: 7)));
+    return (thisWeek: thisRir, lastWeek: lastRir);
+  }
+
+  Future<double?> _avgRirBetween(DateTime from, DateTime to) async {
+    final db = await DatabaseHelper.instance.database;
+    final result = await db.rawQuery('''
+      SELECT AVG(ss.${DbConstants.cSsRir}) AS avg_rir
+      FROM ${DbConstants.tSessionSets} ss
+      JOIN ${DbConstants.tSessionExercises} sx
+        ON ss.${DbConstants.cSsSessionExerciseId} = sx.${DbConstants.cSxId}
+      JOIN ${DbConstants.tSessions} s
+        ON sx.${DbConstants.cSxSessionId} = s.${DbConstants.cSeId}
+      WHERE s.${DbConstants.cSeDate} >= ? AND s.${DbConstants.cSeDate} < ?
+        AND ss.${DbConstants.cSsRir} IS NOT NULL
+    ''', [from.toIso8601String(), to.toIso8601String()]);
+    final v = result.first['avg_rir'];
+    return v == null ? null : (v as num).toDouble();
+  }
+
+  // ── Comparación semanal series efectivas ──────────────────────────────────────
+
+  Future<({int thisWeek, int lastWeek})> weeklyEffectiveSetsComparison(DateTime now) async {
+    final thisMonday = now.subtract(Duration(days: now.weekday - 1));
+    final lastMonday = thisMonday.subtract(const Duration(days: 7));
+    final thisCount = await effectiveSets(thisMonday, thisMonday.add(const Duration(days: 7)));
+    final lastCount = await effectiveSets(lastMonday, lastMonday.add(const Duration(days: 7)));
+    return (thisWeek: thisCount, lastWeek: lastCount);
+  }
+
+  // ── Progreso reciente de reps por ejercicio ───────────────────────────────────
+
+  /// Detecta ejercicios donde en la última sesión se hicieron más reps
+  /// que en la sesión anterior al mismo peso máximo trabajado.
+  Future<List<({String exerciseName, int deltaReps, double weightKg})>>
+      recentRepsProgress({int limit = 3}) async {
+    final db = await DatabaseHelper.instance.database;
+    // Top set (reps máx al peso máx) de las 2 últimas sesiones por ejercicio
+    final rows = await db.rawQuery('''
+      SELECT e.${DbConstants.cExName} AS name,
+             sx.${DbConstants.cSxExerciseId} AS exercise_id,
+             s.${DbConstants.cSeDate} AS date,
+             MAX(ss.${DbConstants.cSsWeightKg}) AS max_weight,
+             MAX(ss.${DbConstants.cSsReps}) AS max_reps
+      FROM ${DbConstants.tSessionSets} ss
+      JOIN ${DbConstants.tSessionExercises} sx
+        ON ss.${DbConstants.cSsSessionExerciseId} = sx.${DbConstants.cSxId}
+      JOIN ${DbConstants.tSessions} s
+        ON sx.${DbConstants.cSxSessionId} = s.${DbConstants.cSeId}
+      JOIN ${DbConstants.tExercises} e
+        ON sx.${DbConstants.cSxExerciseId} = e.${DbConstants.cExId}
+      WHERE ss.${DbConstants.cSsReps} IS NOT NULL
+        AND ss.${DbConstants.cSsWeightKg} IS NOT NULL
+      GROUP BY sx.${DbConstants.cSxExerciseId}, s.${DbConstants.cSeId}
+      ORDER BY sx.${DbConstants.cSxExerciseId}, s.${DbConstants.cSeDate} DESC
+    ''');
+
+    final byExercise = <int, List<Map<String, Object?>>>{};
+    for (final r in rows) {
+      final id = r['exercise_id'] as int;
+      byExercise.putIfAbsent(id, () => []).add(r);
+    }
+
+    final insights = <({String exerciseName, int deltaReps, double weightKg})>[];
+    for (final list in byExercise.values) {
+      if (list.length < 2) continue;
+      final latest = list[0];
+      final prev = list[1];
+      final latestW = (latest['max_weight'] as num).toDouble();
+      final prevW = (prev['max_weight'] as num).toDouble();
+      if (latestW != prevW) continue;
+      final latestR = (latest['max_reps'] as num).toInt();
+      final prevR = (prev['max_reps'] as num).toInt();
+      final delta = latestR - prevR;
+      if (delta <= 0) continue;
+      insights.add((
+        exerciseName: latest['name'] as String,
+        deltaReps: delta,
+        weightKg: latestW,
+      ));
+    }
+    insights.sort((a, b) => b.deltaReps.compareTo(a.deltaReps));
+    return insights.take(limit).toList();
+  }
+
+  // ── Fatiga por grupo muscular ─────────────────────────────────────────────────
+
+  /// Por categoría muscular: volumen y RIR promedio en esta semana vs la anterior.
+  /// El consumidor decide qué es fatiga (RIR ↓ sin aumento de volumen).
+  Future<List<({String muscleKey, double thisVol, double lastVol, double? thisRir, double? lastRir})>>
+      weeklyMuscleFatigue(DateTime now) async {
+    final thisMonday = now.subtract(Duration(days: now.weekday - 1));
+    final lastMonday = thisMonday.subtract(const Duration(days: 7));
+    final thisEnd = thisMonday.add(const Duration(days: 7));
+    final lastEnd = lastMonday.add(const Duration(days: 7));
+
+    final thisData = await _muscleAggregates(thisMonday, thisEnd);
+    final lastData = await _muscleAggregates(lastMonday, lastEnd);
+
+    final keys = {...thisData.keys, ...lastData.keys};
+    return keys.map((k) {
+      final t = thisData[k];
+      final l = lastData[k];
+      return (
+        muscleKey: k,
+        thisVol: t?.volume ?? 0,
+        lastVol: l?.volume ?? 0,
+        thisRir: t?.avgRir,
+        lastRir: l?.avgRir,
+      );
+    }).toList();
+  }
+
+  Future<Map<String, ({double volume, double? avgRir})>> _muscleAggregates(
+      DateTime from, DateTime to) async {
+    final db = await DatabaseHelper.instance.database;
+    final rows = await db.rawQuery('''
+      SELECT e.${DbConstants.cExMuscleCategory} AS mk,
+             COALESCE(SUM(ss.${DbConstants.cSsReps} * ss.${DbConstants.cSsWeightKg}), 0) AS volume,
+             AVG(ss.${DbConstants.cSsRir}) AS avg_rir
+      FROM ${DbConstants.tSessionSets} ss
+      JOIN ${DbConstants.tSessionExercises} sx
+        ON ss.${DbConstants.cSsSessionExerciseId} = sx.${DbConstants.cSxId}
+      JOIN ${DbConstants.tSessions} s
+        ON sx.${DbConstants.cSxSessionId} = s.${DbConstants.cSeId}
+      JOIN ${DbConstants.tExercises} e
+        ON sx.${DbConstants.cSxExerciseId} = e.${DbConstants.cExId}
+      WHERE s.${DbConstants.cSeDate} >= ? AND s.${DbConstants.cSeDate} < ?
+      GROUP BY e.${DbConstants.cExMuscleCategory}
+    ''', [from.toIso8601String(), to.toIso8601String()]);
+    return {
+      for (final r in rows)
+        r['mk'] as String: (
+          volume: (r['volume'] as num).toDouble(),
+          avgRir: r['avg_rir'] == null ? null : (r['avg_rir'] as num).toDouble(),
+        )
+    };
+  }
+
   // ── Músculo más trabajado ─────────────────────────────────────────────────────
 
   /// Categoría muscular con mayor volumen en el rango dado.

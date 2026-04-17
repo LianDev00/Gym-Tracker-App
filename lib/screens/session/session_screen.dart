@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../../core/widgets/info_button.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/glass_kit.dart';
 import '../../models/exercise.dart';
@@ -352,6 +353,9 @@ class _SessionScreenState extends State<SessionScreen> {
       appBar: AppBar(
         title: Text(titleText),
         centerTitle: false,
+        actions: const [
+          InfoButton(text: 'Registra tus entrenamientos por día. Agrega ejercicios o carga una rutina. Los datos se guardan automáticamente.'),
+        ],
       ),
       body: Column(
         children: [
