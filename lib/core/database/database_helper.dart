@@ -51,6 +51,11 @@ class DatabaseHelper {
         'ALTER TABLE ${DbConstants.tSessionSets} ADD COLUMN ${DbConstants.cSsRir} INTEGER',
       );
     }
+    if (oldVersion < 5) {
+      await db.execute(
+        'ALTER TABLE ${DbConstants.tSessions} ADD COLUMN ${DbConstants.cSeIsRestDay} INTEGER NOT NULL DEFAULT 0',
+      );
+    }
   }
 
   /// Activa las foreign keys de SQLite (desactivadas por defecto).
@@ -89,7 +94,8 @@ class DatabaseHelper {
       ${DbConstants.cSeNotes}           TEXT,
       ${DbConstants.cSeRoutineId}       INTEGER
         REFERENCES ${DbConstants.tRoutines}(${DbConstants.cRoId})
-        ON DELETE SET NULL
+        ON DELETE SET NULL,
+      ${DbConstants.cSeIsRestDay}       INTEGER NOT NULL DEFAULT 0
     )
   ''';
 

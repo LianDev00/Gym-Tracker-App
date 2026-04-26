@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme/glass_kit.dart';
 
 class InfoButton extends StatelessWidget {
   const InfoButton({super.key, required this.text});
@@ -9,14 +10,20 @@ class InfoButton extends StatelessWidget {
     return IconButton(
       icon: const Icon(Icons.info_outline),
       tooltip: 'Información',
-      onPressed: () => showDialog(
+      onPressed: () => showGlassDialog<void>(
         context: context,
-        builder: (_) => AlertDialog(
-          icon: const Icon(Icons.info_outline),
+        builder: (ctx) => GlassDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.info_outline, size: 20),
+              SizedBox(width: 8),
+              Text('Información'),
+            ],
+          ),
           content: Text(text, style: const TextStyle(height: 1.6)),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(context),
+              onPressed: () => Navigator.pop(ctx),
               child: const Text('Entendido'),
             ),
           ],

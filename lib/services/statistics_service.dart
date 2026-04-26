@@ -166,6 +166,7 @@ class StatisticsService {
   // ── Historial de volumen por sesión ───────────────────────────────────────────
 
   /// Volumen total por sesión, en orden cronológico (todas las sesiones).
+  /// Excluye días de descanso para no introducir barras a 0 en la gráfica.
   Future<List<({DateTime date, double totalVolume, int sessionId})>>
       sessionVolumeHistory() async {
     final db = await DatabaseHelper.instance.database;
@@ -183,6 +184,7 @@ class StatisticsService {
         ON sx.${DbConstants.cSxSessionId} = s.${DbConstants.cSeId}
       LEFT JOIN ${DbConstants.tSessionSets} ss
         ON ss.${DbConstants.cSsSessionExerciseId} = sx.${DbConstants.cSxId}
+      WHERE s.${DbConstants.cSeIsRestDay} = 0
       GROUP BY s.${DbConstants.cSeId}
       ORDER BY s.${DbConstants.cSeDate}
     ''');
@@ -203,6 +205,7 @@ class StatisticsService {
     final rows = await db.rawQuery('''
       SELECT DISTINCT DATE(${DbConstants.cSeDate}) AS day
       FROM ${DbConstants.tSessions}
+      WHERE ${DbConstants.cSeIsRestDay} = 0
       ORDER BY day
     ''');
 
@@ -236,6 +239,7 @@ class StatisticsService {
   // ── Historial combinado volumen + RIR por sesión ──────────────────────────────
 
   /// Por sesión: volumen total, RIR promedio y series efectivas (RIR ≤ 3).
+  /// Excluye días de descanso.
   Future<List<({DateTime date, int sessionId, double volume, double? avgRir, int effectiveSets})>>
       sessionVolumeAndRirHistory() async {
     final db = await DatabaseHelper.instance.database;
@@ -257,6 +261,7 @@ class StatisticsService {
         ON sx.${DbConstants.cSxSessionId} = s.${DbConstants.cSeId}
       LEFT JOIN ${DbConstants.tSessionSets} ss
         ON ss.${DbConstants.cSsSessionExerciseId} = sx.${DbConstants.cSxId}
+      WHERE s.${DbConstants.cSeIsRestDay} = 0
       GROUP BY s.${DbConstants.cSeId}
       ORDER BY s.${DbConstants.cSeDate}
     ''');

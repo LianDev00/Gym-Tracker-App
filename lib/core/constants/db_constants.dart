@@ -3,7 +3,7 @@
 abstract final class DbConstants {
   // ── Base de datos ────────────────────────────────────────────────────────────
   static const String dbName = 'gym_tracker.db';
-  static const int dbVersion = 4;
+  static const int dbVersion = 5;
 
   // ── Tabla: exercises ─────────────────────────────────────────────────────────
   static const String tExercises = 'exercises';
@@ -19,6 +19,7 @@ abstract final class DbConstants {
   static const String cSeDurationSeconds = 'duration_seconds';
   static const String cSeNotes = 'notes';
   static const String cSeRoutineId = 'routine_id';
+  static const String cSeIsRestDay = 'is_rest_day';
 
   // ── Tabla: session_exercises ─────────────────────────────────────────────────
   static const String tSessionExercises = 'session_exercises';

@@ -60,12 +60,18 @@ class _SessionScreenState extends State<SessionScreen> {
   final _exerciseService = ExerciseService.instance;
 
   late DateTime _selectedDate = _today();
+  late DateTime _weekStart = _mondayOf(_today());
   Set<int> _sessionWeekdays = {};
+  Set<int> _restWeekdays = {};
+  bool _isRestDay = false;
 
   static DateTime _today() {
     final n = DateTime.now();
     return DateTime(n.year, n.month, n.day);
   }
+
+  static DateTime _mondayOf(DateTime d) =>
+      DateTime(d.year, d.month, d.day).subtract(Duration(days: d.weekday - 1));
 
   @override
   void initState() {
@@ -75,12 +81,24 @@ class _SessionScreenState extends State<SessionScreen> {
   }
 
   Future<void> _loadWeekSessions() async {
-    final monday = _today().subtract(Duration(days: _today().weekday - 1));
-    final days = await _sessionService.getSessionWeekdaysInRange(
-      monday,
-      monday.add(const Duration(days: 7)),
-    );
-    if (mounted) setState(() => _sessionWeekdays = days);
+    final end = _weekStart.add(const Duration(days: 7));
+    final days =
+        await _sessionService.getSessionWeekdaysInRange(_weekStart, end);
+    final rest =
+        await _sessionService.getRestWeekdaysInRange(_weekStart, end);
+    if (mounted) {
+      setState(() {
+        _sessionWeekdays = days;
+        _restWeekdays = rest;
+      });
+    }
+  }
+
+  void _changeWeek(int offset) {
+    setState(() {
+      _weekStart = _weekStart.add(Duration(days: 7 * offset));
+    });
+    _loadWeekSessions();
   }
 
   Future<void> _selectDay(DateTime date) async {
@@ -92,13 +110,48 @@ class _SessionScreenState extends State<SessionScreen> {
       _selectedDate = date;
       _entries.clear();
       _sessionId = null;
+      _isRestDay = false;
     });
 
     // Cargar la sesión propia de ese día (si existe)
     final session = await _sessionService.getSessionForDate(date);
     if (session != null && mounted) {
-      await _loadExistingSession(session.id!);
+      if (session.isRestDay) {
+        setState(() {
+          _sessionId = session.id;
+          _isRestDay = true;
+        });
+      } else {
+        await _loadExistingSession(session.id!);
+      }
     }
+  }
+
+  Future<void> _toggleRestDay() async {
+    if (_isRestDay) {
+      if (_sessionId != null) {
+        await _sessionService.delete(_sessionId!);
+      }
+      setState(() {
+        _sessionId = null;
+        _isRestDay = false;
+      });
+      _loadWeekSessions();
+      return;
+    }
+    if (_entries.isNotEmpty) return;
+    final now = DateTime.now();
+    final date = DateTime(
+      _selectedDate.year, _selectedDate.month, _selectedDate.day,
+      now.hour, now.minute, now.second,
+    );
+    final session =
+        await _sessionService.insert(Session(date: date, isRestDay: true));
+    setState(() {
+      _sessionId = session.id;
+      _isRestDay = true;
+    });
+    _loadWeekSessions();
   }
 
   @override
@@ -359,49 +412,131 @@ class _SessionScreenState extends State<SessionScreen> {
       ),
       body: Column(
         children: [
+          _WeekHeader(
+            weekStart: _weekStart,
+            onPrev: () => _changeWeek(-1),
+            onNext: () => _changeWeek(1),
+            onToday: () {
+              setState(() => _weekStart = _mondayOf(_today()));
+              _loadWeekSessions();
+              _selectDay(_today());
+            },
+          ),
           _WeekBar(
+            weekStart: _weekStart,
             selectedDate: _selectedDate,
             sessionWeekdays: _sessionWeekdays,
+            restWeekdays: _restWeekdays,
             onDaySelected: _selectDay,
           ),
           Divider(height: 1, color: colors.outlineVariant.withValues(alpha: 0.3)),
           Expanded(
-            child: _entries.isEmpty
-                ? Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.fitness_center, size: 64, color: colors.outline),
-                        const SizedBox(height: 16),
-                        Text('Sin ejercicios',
-                            style: TextStyle(color: colors.outline, fontSize: 18)),
-                        const SizedBox(height: 8),
-                        Text('Toca + para agregar un ejercicio',
-                            style: TextStyle(color: colors.outlineVariant)),
-                      ],
-                    ),
-                  )
-                : ListView.builder(
-                    padding: const EdgeInsets.only(bottom: 100),
-                    itemCount: _entries.length,
-                    itemBuilder: (_, i) => _ExerciseCard(
-                      entry: _entries[i],
-                      onAddSet: () => _addSet(_entries[i]),
-                      onRemoveExercise: () => _removeExercise(_entries[i]),
-                      onRemoveSet: (set) => _removeSet(_entries[i], set),
-                    ),
-                  ),
+            child: _isRestDay
+                ? _RestDayView(onUndo: _toggleRestDay)
+                : _entries.isEmpty
+                    ? _EmptySessionView(onMarkRest: _toggleRestDay)
+                    : ListView.builder(
+                        padding: const EdgeInsets.only(bottom: 100),
+                        itemCount: _entries.length,
+                        itemBuilder: (_, i) => _ExerciseCard(
+                          entry: _entries[i],
+                          onAddSet: () => _addSet(_entries[i]),
+                          onRemoveExercise: () => _removeExercise(_entries[i]),
+                          onRemoveSet: (set) => _removeSet(_entries[i], set),
+                        ),
+                      ),
           ),
         ],
       ),
-      floatingActionButton: Padding(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.viewPaddingOf(context).bottom + 100,
-        ),
-        child: FloatingActionButton.extended(
-          onPressed: _showAddOptions,
-          icon: const Icon(Icons.add),
-          label: const Text('Agregar'),
+      floatingActionButton: _isRestDay
+          ? null
+          : Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.viewPaddingOf(context).bottom + 100,
+              ),
+              child: FloatingActionButton.extended(
+                onPressed: _showAddOptions,
+                icon: const Icon(Icons.add),
+                label: const Text('Agregar'),
+              ),
+            ),
+    );
+  }
+}
+
+// ── Empty session view (no entries, not rest) ────────────────────────────────
+
+class _EmptySessionView extends StatelessWidget {
+  const _EmptySessionView({required this.onMarkRest});
+  final VoidCallback onMarkRest;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.fitness_center, size: 64, color: colors.outline),
+          const SizedBox(height: 16),
+          Text('Sin ejercicios',
+              style: TextStyle(color: colors.outline, fontSize: 18)),
+          const SizedBox(height: 8),
+          Text('Toca + para agregar un ejercicio',
+              style: TextStyle(color: colors.outlineVariant)),
+          const SizedBox(height: 24),
+          TextButton.icon(
+            onPressed: onMarkRest,
+            icon: const Icon(Icons.bedtime_outlined, size: 18),
+            label: const Text('Marcar día de descanso'),
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.secondary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Rest day view ─────────────────────────────────────────────────────────────
+
+class _RestDayView extends StatelessWidget {
+  const _RestDayView({required this.onUndo});
+  final VoidCallback onUndo;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('💤', style: TextStyle(fontSize: 64)),
+            const SizedBox(height: 16),
+            const Text(
+              'Día de descanso',
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+                color: AppColors.onBg,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'No cuenta para volumen ni racha de entrenamiento.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: colors.outline, fontSize: 13),
+            ),
+            const SizedBox(height: 24),
+            OutlinedButton.icon(
+              onPressed: onUndo,
+              icon: const Icon(Icons.close, size: 18),
+              label: const Text('Quitar descanso'),
+            ),
+          ],
         ),
       ),
     );
@@ -1014,17 +1149,104 @@ class _CreateExerciseDialogState extends State<_CreateExerciseDialog> {
   }
 }
 
+// ── Week header ───────────────────────────────────────────────────────────────
+
+class _WeekHeader extends StatelessWidget {
+  const _WeekHeader({
+    required this.weekStart,
+    required this.onPrev,
+    required this.onNext,
+    required this.onToday,
+  });
+
+  final DateTime weekStart;
+  final VoidCallback onPrev;
+  final VoidCallback onNext;
+  final VoidCallback onToday;
+
+  static const _months = [
+    'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+    'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
+  ];
+
+  int get _weekOfMonth => ((weekStart.day - 1) ~/ 7) + 1;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final now = DateTime.now();
+    final showYear = weekStart.year != now.year;
+    final monthLabel = _months[weekStart.month - 1];
+    final title = showYear
+        ? '$monthLabel ${weekStart.year} · Semana $_weekOfMonth'
+        : '$monthLabel · Semana $_weekOfMonth';
+
+    final currentMonday = DateTime(now.year, now.month, now.day)
+        .subtract(Duration(days: now.weekday - 1));
+    final isCurrentWeek = weekStart == currentMonday;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 6, 8, 0),
+      child: Row(
+        children: [
+          IconButton(
+            onPressed: onPrev,
+            icon: const Icon(Icons.chevron_left),
+            tooltip: 'Semana anterior',
+          ),
+          Expanded(
+            child: GestureDetector(
+              onTap: isCurrentWeek ? null : onToday,
+              behavior: HitTestBehavior.opaque,
+              child: Column(
+                children: [
+                  Text(
+                    title,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: colors.onSurface,
+                    ),
+                  ),
+                  if (!isCurrentWeek)
+                    Text(
+                      'Volver a hoy',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: colors.primary,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          IconButton(
+            onPressed: onNext,
+            icon: const Icon(Icons.chevron_right),
+            tooltip: 'Semana siguiente',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 // ── Week bar ──────────────────────────────────────────────────────────────────
 
 class _WeekBar extends StatelessWidget {
   const _WeekBar({
+    required this.weekStart,
     required this.selectedDate,
     required this.sessionWeekdays,
+    required this.restWeekdays,
     required this.onDaySelected,
   });
 
+  final DateTime weekStart;
   final DateTime selectedDate;
   final Set<int> sessionWeekdays;
+  final Set<int> restWeekdays;
   final void Function(DateTime) onDaySelected;
 
   static const _labels = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
@@ -1038,16 +1260,16 @@ class _WeekBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final today = _today();
-    final monday = today.subtract(Duration(days: today.weekday - 1));
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: List.generate(7, (i) {
-          final day = monday.add(Duration(days: i));
+          final day = weekStart.add(Duration(days: i));
           final isToday = day == today;
           final isSelected = day == selectedDate;
+          final isRest = restWeekdays.contains(i + 1);
           final hasSession = sessionWeekdays.contains(i + 1);
 
           Color bgColor;
@@ -1055,8 +1277,11 @@ class _WeekBar extends StatelessWidget {
           Border? border;
 
           if (isSelected) {
-            bgColor = colors.primary;
+            bgColor = isRest ? AppColors.secondary : colors.primary;
             textColor = colors.onPrimary;
+          } else if (isRest) {
+            bgColor = AppColors.secondary.withValues(alpha: 0.18);
+            textColor = AppColors.secondary;
           } else if (hasSession) {
             bgColor = colors.primaryContainer;
             textColor = colors.onPrimaryContainer;
@@ -1066,7 +1291,10 @@ class _WeekBar extends StatelessWidget {
           }
 
           if (isToday && !isSelected) {
-            border = Border.all(color: colors.primary, width: 1.5);
+            border = Border.all(
+              color: isRest ? AppColors.secondary : colors.primary,
+              width: 1.5,
+            );
           }
 
           return GestureDetector(

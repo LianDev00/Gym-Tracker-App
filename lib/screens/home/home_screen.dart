@@ -56,7 +56,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     final streaks = results[0] as ({int currentStreak, int maxStreak});
     final sessions = results[2] as List<Session>;
-    final lastSession = sessions.isNotEmpty ? sessions.first : null;
+    // El "último entreno" ignora los días de descanso.
+    final lastSession =
+        sessions.where((s) => !s.isRestDay).cast<Session?>().firstWhere(
+              (_) => true,
+              orElse: () => null,
+            );
 
     List<Exercise> lastExercises = [];
     if (lastSession != null) {

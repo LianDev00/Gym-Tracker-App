@@ -2,15 +2,30 @@
 .dart_tool/
 .flutter-plugins
 .flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
 build/
+coverage/
+doc/api/
+**/doc/api/
+*.log
 
-# ─── IntelliJ / Android Studio ───────────────────────────────────
+# ─── IntelliJ / Android Studio / VS Code ─────────────────────────
 .idea/
 *.iml
+*.ipr
+*.iws
+.vscode/
 
 # ─── Android ──────────────────────────────────────────────────────
 android/local.properties
 android/.gradle/
+android/.kotlin/
+android/captures/
+android/.cxx/
+android/app/release/
+android/app/debug/
 android/key.properties
 *.keystore
 *.jks
@@ -18,9 +33,14 @@ android/key.properties
 # ─── iOS / macOS ──────────────────────────────────────────────────
 ios/Flutter/flutter_export_environment.sh
 ios/Flutter/Generated.xcconfig
+ios/Flutter/.last_build_id
+ios/Pods/
+ios/.symlinks/
+ios/Runner.xcworkspace/xcshareddata/
 macos/Flutter/GeneratedPluginRegistrant.swift
 macos/Flutter/Flutter-Debug.xcconfig
 macos/Flutter/Flutter-Release.xcconfig
+macos/Pods/
 
 # ─── Web ──────────────────────────────────────────────────────────
 lib/generated_plugin_registrant.dart
@@ -29,15 +49,26 @@ lib/generated_plugin_registrant.dart
 .DS_Store
 Thumbs.db
 Desktop.ini
+ehthumbs.db
+$RECYCLE.BIN/
 
 # ─── Claude Code / archivos locales ───────────────────────────────
 .claude/
 .agents
 skills-lock.json
+
+# ─── Notas y documentación interna (no necesarias para la app) ────
 later.md
 Notas.md
+DOCUMENTACION.md
+estadisticas_calculos.md
+web_capacitor_guide.md
 problemas.md
-problemas_01.md
-problemas_02.md
-mejoras_01.md
-mejoras_02.md
+problemas_*.md
+mejoras_*.md
+
+# ─── Recursos de diseño / assets fuente (no usados por la app) ────
+Imagenes_ejemplo/
+Logo_GT*.png
+Logo_GT*.ico
+*.ico

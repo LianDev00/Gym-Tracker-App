@@ -48,6 +48,7 @@ class SessionService {
   }
 
   /// Días con sesión registrada en un mes dado (para el calendario).
+  /// Incluye descansos. Usa [getRestDaysInMonth] para distinguirlos.
   Future<List<DateTime>> getDaysWithSessionInMonth(int year, int month) async {
     final db = await _db;
     final from = DateTime(year, month, 1).toIso8601String();
@@ -63,13 +64,46 @@ class SessionService {
         .toList();
   }
 
+  /// Subconjunto de [getDaysWithSessionInMonth] que son días de descanso.
+  Future<List<DateTime>> getRestDaysInMonth(int year, int month) async {
+    final db = await _db;
+    final from = DateTime(year, month, 1).toIso8601String();
+    final to = DateTime(year, month + 1, 1).toIso8601String();
+    final rows = await db.query(
+      DbConstants.tSessions,
+      columns: [DbConstants.cSeDate],
+      where:
+          '${DbConstants.cSeDate} >= ? AND ${DbConstants.cSeDate} < ? AND ${DbConstants.cSeIsRestDay} = 1',
+      whereArgs: [from, to],
+    );
+    return rows
+        .map((r) => DateTime.parse(r[DbConstants.cSeDate] as String))
+        .toList();
+  }
+
   /// Weekdays (1=Lun … 7=Dom) que tienen sesión en el rango [from, to).
+  /// Incluye descansos. Usa [getRestWeekdaysInRange] para distinguirlos.
   Future<Set<int>> getSessionWeekdaysInRange(DateTime from, DateTime to) async {
     final db = await _db;
     final rows = await db.query(
       DbConstants.tSessions,
       columns: [DbConstants.cSeDate],
       where: '${DbConstants.cSeDate} >= ? AND ${DbConstants.cSeDate} < ?',
+      whereArgs: [from.toIso8601String(), to.toIso8601String()],
+    );
+    return rows
+        .map((r) => DateTime.parse(r[DbConstants.cSeDate] as String).weekday)
+        .toSet();
+  }
+
+  /// Weekdays que son días de descanso en el rango [from, to).
+  Future<Set<int>> getRestWeekdaysInRange(DateTime from, DateTime to) async {
+    final db = await _db;
+    final rows = await db.query(
+      DbConstants.tSessions,
+      columns: [DbConstants.cSeDate],
+      where:
+          '${DbConstants.cSeDate} >= ? AND ${DbConstants.cSeDate} < ? AND ${DbConstants.cSeIsRestDay} = 1',
       whereArgs: [from.toIso8601String(), to.toIso8601String()],
     );
     return rows

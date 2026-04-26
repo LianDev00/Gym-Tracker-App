@@ -1,5 +1,8 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../../core/theme/app_theme.dart';
+import '../../core/theme/glass_kit.dart';
 import '../../core/widgets/info_button.dart';
 import '../../models/exercise.dart';
 import '../../models/muscle_category.dart';
@@ -230,10 +233,81 @@ class _StatsScreenState extends State<StatsScreen> {
                   const SizedBox(height: 8),
                   _PersonalRecordsCard(prs: _prs),
 
+                  const SizedBox(height: 24),
+                  const _BrandFooter(),
                   const SizedBox(height: 12),
                 ],
               ),
             ),
+    );
+  }
+}
+
+class _BrandFooter extends StatelessWidget {
+  const _BrandFooter();
+
+  static final Uri _githubUri = Uri.parse('https://github.com/LianDev00');
+
+  Future<void> _openGithub(BuildContext context) async {
+    final ok = await launchUrl(_githubUri, mode: LaunchMode.externalApplication);
+    if (!ok && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No se pudo abrir el enlace')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            'Diseñada por',
+            style: TextStyle(
+              fontSize: 11,
+              color: AppColors.muted.withValues(alpha: 0.85),
+              letterSpacing: 1.2,
+            ),
+          ),
+          const SizedBox(height: 2),
+          const Text(
+            'LianDev',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: AppColors.onBg,
+              letterSpacing: 1.4,
+            ),
+          ),
+          const SizedBox(height: 8),
+          InkWell(
+            onTap: () => _openGithub(context),
+            borderRadius: BorderRadius.circular(20),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.code_rounded, size: 14, color: AppColors.primary),
+                  const SizedBox(width: 6),
+                  Text(
+                    'github.com/LianDev00',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: AppColors.primary,
+                      letterSpacing: 0.3,
+                      decoration: TextDecoration.underline,
+                      decorationColor: AppColors.primary.withValues(alpha: 0.5),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -304,10 +378,9 @@ class _SummaryCard extends StatelessWidget {
                 100)
             .toStringAsFixed(0);
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
+    return GlassCard(
+      padding: const EdgeInsets.all(16),
+      child: Column(
           children: [
             // Racha
             Row(
@@ -433,7 +506,6 @@ class _SummaryCard extends StatelessWidget {
             ),
           ],
         ),
-      ),
     );
   }
 }
@@ -523,13 +595,11 @@ class _VolumeRirCard extends StatelessWidget {
     final withRir = history.where((h) => h.avgRir != null).toList();
 
     if (history.isEmpty) {
-      return Card(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Center(
-            child: Text('Sin sesiones registradas',
-                style: TextStyle(color: colors.outline)),
-          ),
+      return GlassCard(
+        padding: const EdgeInsets.all(20),
+        child: Center(
+          child: Text('Sin sesiones registradas',
+              style: TextStyle(color: colors.outline)),
         ),
       );
     }
@@ -541,12 +611,11 @@ class _VolumeRirCard extends StatelessWidget {
         ? null
         : withRir.map((h) => h.avgRir!).reduce((a, b) => a + b) / withRir.length;
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+    return GlassCard(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
             Wrap(
               spacing: 6,
               runSpacing: 6,
@@ -619,7 +688,6 @@ class _VolumeRirCard extends StatelessWidget {
             ],
           ],
         ),
-      ),
     );
   }
 
@@ -682,15 +750,13 @@ class _MuscleVolumeCard extends StatelessWidget {
     final colors = Theme.of(context).colorScheme;
 
     if (muscleVolume.isEmpty) {
-      return Card(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Center(
-            child: Text(
-              'Registra entrenamientos con peso esta semana',
-              style: TextStyle(color: colors.outline),
-              textAlign: TextAlign.center,
-            ),
+      return GlassCard(
+        padding: const EdgeInsets.all(20),
+        child: Center(
+          child: Text(
+            'Registra entrenamientos con peso esta semana',
+            style: TextStyle(color: colors.outline),
+            textAlign: TextAlign.center,
           ),
         ),
       );
@@ -698,12 +764,11 @@ class _MuscleVolumeCard extends StatelessWidget {
 
     final maxVol = muscleVolume.values.reduce((a, b) => a > b ? a : b);
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: muscleVolume.entries.map((e) {
+    return GlassCard(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: muscleVolume.entries.map((e) {
             final ratio = e.value / maxVol;
             // Traduce muscle_category key → nombre mostrable
             final name = _muscleDisplayName(e.key);
@@ -743,7 +808,6 @@ class _MuscleVolumeCard extends StatelessWidget {
             );
           }).toList(),
         ),
-      ),
     );
   }
 
@@ -799,13 +863,11 @@ class _ExerciseProgressCard extends StatelessWidget {
     final colors = Theme.of(context).colorScheme;
 
     if (exercises.isEmpty) {
-      return Card(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Center(
-            child: Text('Sin ejercicios',
-                style: TextStyle(color: colors.outline)),
-          ),
+      return GlassCard(
+        padding: const EdgeInsets.all(20),
+        child: Center(
+          child: Text('Sin ejercicios',
+              style: TextStyle(color: colors.outline)),
         ),
       );
     }
@@ -815,12 +877,11 @@ class _ExerciseProgressCard extends StatelessWidget {
         : history.map((h) => h.maxWeightKg).reduce((a, b) => a > b ? a : b);
     final last = history.isEmpty ? null : history.last;
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+    return GlassCard(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
             DropdownButtonFormField<Exercise>(
               initialValue: selected,
               decoration: const InputDecoration(
@@ -862,7 +923,6 @@ class _ExerciseProgressCard extends StatelessWidget {
             ],
           ],
         ),
-      ),
     );
   }
 }
@@ -878,25 +938,22 @@ class _PersonalRecordsCard extends StatelessWidget {
     final colors = Theme.of(context).colorScheme;
 
     if (prs.isEmpty) {
-      return Card(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Center(
-            child: Text(
-              'Registra series con peso para ver tus récords',
-              style: TextStyle(color: colors.outline),
-              textAlign: TextAlign.center,
-            ),
+      return GlassCard(
+        padding: const EdgeInsets.all(20),
+        child: Center(
+          child: Text(
+            'Registra series con peso para ver tus récords',
+            style: TextStyle(color: colors.outline),
+            textAlign: TextAlign.center,
           ),
         ),
       );
     }
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: prs.asMap().entries.map((entry) {
+    return GlassCard(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        children: prs.asMap().entries.map((entry) {
             final i = entry.key;
             final pr = entry.value;
             return Padding(
@@ -939,8 +996,7 @@ class _PersonalRecordsCard extends StatelessWidget {
                 ],
               ),
             );
-          }).toList(),
-        ),
+        }).toList(),
       ),
     );
   }
@@ -1418,31 +1474,27 @@ class _InsightsCard extends StatelessWidget {
     final insights = _buildInsights();
 
     if (insights.isEmpty) {
-      return Card(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Center(
-            child: Text(
-              'Registra más sesiones para ver insights automáticos',
-              style: TextStyle(color: colors.outline),
-              textAlign: TextAlign.center,
-            ),
+      return GlassCard(
+        padding: const EdgeInsets.all(20),
+        child: Center(
+          child: Text(
+            'Registra más sesiones para ver insights automáticos',
+            style: TextStyle(color: colors.outline),
+            textAlign: TextAlign.center,
           ),
         ),
       );
     }
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          children: insights
-              .map((i) => Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    child: _InsightTile(insight: i, colors: colors),
-                  ))
-              .toList(),
-        ),
+    return GlassCard(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        children: insights
+            .map((i) => Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: _InsightTile(insight: i, colors: colors),
+                ))
+            .toList(),
       ),
     );
   }

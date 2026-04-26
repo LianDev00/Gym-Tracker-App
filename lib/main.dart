@@ -8,6 +8,7 @@ import 'screens/history/history_screen.dart';
 import 'screens/exercises/exercises_screen.dart';
 import 'screens/routines/routines_screen.dart';
 import 'screens/body/body_screen.dart';
+import 'screens/splash/splash_screen.dart';
 import 'screens/stats/stats_screen.dart';
 
 void main() {
@@ -16,8 +17,29 @@ void main() {
   runApp(const GymTrackerApp());
 }
 
-class GymTrackerApp extends StatelessWidget {
+class GymTrackerApp extends StatefulWidget {
   const GymTrackerApp({super.key});
+
+  @override
+  State<GymTrackerApp> createState() => _GymTrackerAppState();
+}
+
+class _GymTrackerAppState extends State<GymTrackerApp> {
+  bool _showSplash = true;
+
+  @override
+  void initState() {
+    super.initState();
+    // Quitamos el splash nativo apenas el primer frame esté listo,
+    // así nuestro SplashScreen Flutter (con la marca) toma el relevo.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      FlutterNativeSplash.remove();
+    });
+  }
+
+  void _onSplashFinish() {
+    if (mounted) setState(() => _showSplash = false);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -25,7 +47,9 @@ class GymTrackerApp extends StatelessWidget {
       title: 'Gym Tracker',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.dark,
-      home: const MainNavigation(),
+      home: _showSplash
+          ? SplashScreen(onFinish: _onSplashFinish)
+          : const MainNavigation(),
     );
   }
 }
@@ -39,12 +63,6 @@ class MainNavigation extends StatefulWidget {
 
 class _MainNavigationState extends State<MainNavigation> {
   int _currentIndex = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    FlutterNativeSplash.remove();
-  }
 
   final List<Widget> _screens = const [
     HomeScreen(),

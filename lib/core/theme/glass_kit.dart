@@ -11,6 +11,7 @@ class GlassCard extends StatelessWidget {
     super.key,
     required this.child,
     this.padding = const EdgeInsets.all(16),
+    this.margin,
     this.borderRadius = 20,
     this.blur = 14,
     this.opacity = 0.05,
@@ -20,6 +21,7 @@ class GlassCard extends StatelessWidget {
 
   final Widget child;
   final EdgeInsetsGeometry padding;
+  final EdgeInsetsGeometry? margin;
   final double borderRadius;
   final double blur;
   final double opacity;
@@ -28,7 +30,7 @@ class GlassCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ClipRRect(
+    final card = ClipRRect(
       borderRadius: BorderRadius.circular(borderRadius),
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
@@ -49,6 +51,7 @@ class GlassCard extends StatelessWidget {
         ),
       ),
     );
+    return margin == null ? card : Padding(padding: margin!, child: card);
   }
 }
 
@@ -61,54 +64,45 @@ class NeonGlassCard extends StatelessWidget {
     super.key,
     required this.child,
     this.padding = const EdgeInsets.all(16),
+    this.margin,
     this.borderRadius = 20,
     this.glowColor = AppColors.primary,
   });
 
   final Widget child;
   final EdgeInsetsGeometry padding;
+  final EdgeInsetsGeometry? margin;
   final double borderRadius;
   final Color glowColor;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(borderRadius),
-        boxShadow: [
-          BoxShadow(
-            color: glowColor.withValues(alpha: 0.12),
-            blurRadius: 24,
-            spreadRadius: 0,
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(borderRadius),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-          child: Container(
-            padding: padding,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(borderRadius),
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  glowColor.withValues(alpha: 0.08),
-                  Colors.white.withValues(alpha: 0.03),
-                ],
-              ),
-              border: Border.all(
-                color: glowColor.withValues(alpha: 0.2),
-                width: 1,
-              ),
+    final card = ClipRRect(
+      borderRadius: BorderRadius.circular(borderRadius),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+        child: Container(
+          padding: padding,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(borderRadius),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                glowColor.withValues(alpha: 0.06),
+                Colors.white.withValues(alpha: 0.03),
+              ],
             ),
-            child: child,
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.08),
+              width: 1,
+            ),
           ),
+          child: child,
         ),
       ),
     );
+    return margin == null ? card : Padding(padding: margin!, child: card);
   }
 }
 
@@ -296,7 +290,7 @@ class GlassChip extends StatelessWidget {
 // NeonButton — botón primario con gradiente y glow
 // ─────────────────────────────────────────────────────────────────────────────
 
-class NeonButton extends StatelessWidget {
+class NeonButton extends StatefulWidget {
   const NeonButton({
     super.key,
     required this.label,
@@ -313,50 +307,61 @@ class NeonButton extends StatelessWidget {
   final bool expand;
 
   @override
+  State<NeonButton> createState() => _NeonButtonState();
+}
+
+class _NeonButtonState extends State<NeonButton> {
+  bool _pressed = false;
+
+  Widget _label() => Row(
+        mainAxisSize: widget.expand ? MainAxisSize.max : MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          if (widget.icon != null) ...[
+            Icon(widget.icon, color: widget.color, size: 18),
+            const SizedBox(width: 8),
+          ],
+          Text(
+            widget.label,
+            style: TextStyle(
+              color: widget.color,
+              fontWeight: FontWeight.w600,
+              fontSize: 15,
+              letterSpacing: 0.2,
+            ),
+          ),
+        ],
+      );
+
+  @override
   Widget build(BuildContext context) {
     final inner = GestureDetector(
-      onTap: onPressed,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [
-              color.withValues(alpha: 0.22),
-              color.withValues(alpha: 0.08),
-            ],
+      onTap: widget.onPressed,
+      onTapDown: (_) => setState(() => _pressed = true),
+      onTapUp: (_) => setState(() => _pressed = false),
+      onTapCancel: () => setState(() => _pressed = false),
+      child: AnimatedScale(
+        scale: _pressed ? 0.97 : 1.0,
+        duration: const Duration(milliseconds: 120),
+        curve: Curves.easeOut,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                widget.color.withValues(alpha: 0.14),
+                widget.color.withValues(alpha: 0.06),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+                color: Colors.white.withValues(alpha: 0.10), width: 1),
           ),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: color.withValues(alpha: 0.38), width: 1),
-          boxShadow: [
-            BoxShadow(
-              color: color.withValues(alpha: 0.18),
-              blurRadius: 16,
-              spreadRadius: 0,
-            ),
-          ],
-        ),
-        child: Row(
-          mainAxisSize: expand ? MainAxisSize.max : MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            if (icon != null) ...[
-              Icon(icon, color: color, size: 18),
-              const SizedBox(width: 8),
-            ],
-            Text(
-              label,
-              style: TextStyle(
-                color: color,
-                fontWeight: FontWeight.w600,
-                fontSize: 15,
-                letterSpacing: 0.2,
-              ),
-            ),
-          ],
+          child: _label(),
         ),
       ),
     );
-    return expand ? SizedBox(width: double.infinity, child: inner) : inner;
+    return widget.expand ? SizedBox(width: double.infinity, child: inner) : inner;
   }
 }
 
@@ -420,31 +425,152 @@ class GlassNavBar extends StatelessWidget {
   final ValueChanged<int> onDestinationSelected;
   final List<NavigationDestination> destinations;
 
+  static const double _radius = 28;
+
   @override
   Widget build(BuildContext context) {
-    return ClipRect(
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-        child: Container(
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.04),
-            border: Border(
-              top: BorderSide(
-                color: Colors.white.withValues(alpha: 0.07),
+    final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(12, 0, 12, bottomInset > 0 ? 8 : 14),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(_radius),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.04),
+              borderRadius: BorderRadius.circular(_radius),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.08),
                 width: 0.5,
               ),
             ),
-          ),
-          child: NavigationBar(
-            selectedIndex: selectedIndex,
-            onDestinationSelected: onDestinationSelected,
-            destinations: destinations,
-            backgroundColor: Colors.transparent,
-            elevation: 0,
-            height: 68,
+            child: NavigationBar(
+              selectedIndex: selectedIndex,
+              onDestinationSelected: onDestinationSelected,
+              destinations: destinations,
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              height: 68,
+              labelBehavior: NavigationDestinationLabelBehavior.alwaysHide,
+            ),
           ),
         ),
       ),
     );
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GlassDialog — modal translúcido con efecto Liquid Glass
+// ─────────────────────────────────────────────────────────────────────────────
+
+class GlassDialog extends StatelessWidget {
+  const GlassDialog({
+    super.key,
+    this.title,
+    required this.content,
+    this.actions,
+    this.borderRadius = 24,
+  });
+
+  final Widget? title;
+  final Widget content;
+  final List<Widget>? actions;
+  final double borderRadius;
+
+  @override
+  Widget build(BuildContext context) {
+    final body = Padding(
+      padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (title != null) ...[
+            DefaultTextStyle.merge(
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: AppColors.onBg,
+              ),
+              child: title!,
+            ),
+            const SizedBox(height: 14),
+          ],
+          DefaultTextStyle.merge(
+            style: const TextStyle(
+              color: AppColors.onSurface,
+              height: 1.5,
+              fontSize: 14,
+            ),
+            child: content,
+          ),
+          if (actions != null && actions!.isNotEmpty) ...[
+            const SizedBox(height: 18),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                for (int i = 0; i < actions!.length; i++) ...[
+                  if (i > 0) const SizedBox(width: 8),
+                  actions![i],
+                ],
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 480),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(borderRadius),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.06),
+                borderRadius: BorderRadius.circular(borderRadius),
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.1),
+                ),
+              ),
+              child: body,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Helper que abre un [GlassDialog] con barrier translúcido y transición suave.
+Future<T?> showGlassDialog<T>({
+  required BuildContext context,
+  required WidgetBuilder builder,
+  bool barrierDismissible = true,
+}) {
+  return showGeneralDialog<T>(
+    context: context,
+    barrierDismissible: barrierDismissible,
+    barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
+    barrierColor: Colors.black.withValues(alpha: 0.45),
+    transitionDuration: const Duration(milliseconds: 240),
+    pageBuilder: (ctx, _, __) => Builder(builder: builder),
+    transitionBuilder: (_, anim, __, child) {
+      final curved = CurvedAnimation(parent: anim, curve: Curves.easeOutCubic);
+      return FadeTransition(
+        opacity: curved,
+        child: ScaleTransition(
+          scale: Tween<double>(begin: 0.94, end: 1).animate(curved),
+          child: child,
+        ),
+      );
+    },
+  );
 }

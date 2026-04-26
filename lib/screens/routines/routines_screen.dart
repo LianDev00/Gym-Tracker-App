@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/theme/glass_kit.dart';
 import '../../core/widgets/info_button.dart';
 import '../../models/exercise.dart';
 import '../../models/muscle_category.dart';
@@ -140,14 +141,19 @@ class _RoutineCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    return Card(
+    return GlassCard(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      padding: EdgeInsets.zero,
+      borderRadius: 20,
       child: ListTile(
         onTap: onTap,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
         leading: CircleAvatar(
-          backgroundColor: colors.primaryContainer,
+          backgroundColor: colors.primaryContainer.withValues(alpha: 0.4),
           child: Icon(Icons.fitness_center,
-              color: colors.onPrimaryContainer, size: 20),
+              color: colors.primary, size: 20),
         ),
         title: Text(routine.name,
             style: const TextStyle(fontWeight: FontWeight.bold)),

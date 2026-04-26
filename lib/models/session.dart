@@ -7,6 +7,7 @@ class Session {
     this.durationSeconds,
     this.notes,
     this.routineId,
+    this.isRestDay = false,
   });
 
   final int? id;
@@ -14,6 +15,7 @@ class Session {
   final int? durationSeconds;
   final String? notes;
   final int? routineId;
+  final bool isRestDay;
 
   Session copyWith({
     int? id,
@@ -21,6 +23,7 @@ class Session {
     int? durationSeconds,
     String? notes,
     int? routineId,
+    bool? isRestDay,
   }) =>
       Session(
         id: id ?? this.id,
@@ -28,6 +31,7 @@ class Session {
         durationSeconds: durationSeconds ?? this.durationSeconds,
         notes: notes ?? this.notes,
         routineId: routineId ?? this.routineId,
+        isRestDay: isRestDay ?? this.isRestDay,
       );
 
   Map<String, dynamic> toMap() => {
@@ -36,6 +40,7 @@ class Session {
         DbConstants.cSeDurationSeconds: durationSeconds,
         DbConstants.cSeNotes: notes,
         DbConstants.cSeRoutineId: routineId,
+        DbConstants.cSeIsRestDay: isRestDay ? 1 : 0,
       };
 
   factory Session.fromMap(Map<String, dynamic> map) => Session(
@@ -44,6 +49,7 @@ class Session {
         durationSeconds: map[DbConstants.cSeDurationSeconds] as int?,
         notes: map[DbConstants.cSeNotes] as String?,
         routineId: map[DbConstants.cSeRoutineId] as int?,
+        isRestDay: (map[DbConstants.cSeIsRestDay] as int? ?? 0) == 1,
       );
 
   @override

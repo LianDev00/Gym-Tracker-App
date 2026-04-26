@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../../core/theme/app_theme.dart';
+import '../../core/theme/glass_kit.dart';
 import '../../core/widgets/info_button.dart';
 import '../../models/session.dart';
 import '../../services/exercise_service.dart';
@@ -42,6 +44,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
   List<_SessionSummary> _summaries = [];
   Set<String> _activeDays = {};
+  Set<String> _restDays = {};
   DateTime _calendarMonth = DateTime.now();
   int _streak = 0;
   bool _loading = true;
@@ -57,9 +60,17 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
     final sessions = await _sessionService.getAll();
 
-    final allDayKeys = sessions.map((s) => _dayKey(s.date)).toSet();
+    // La racha solo cuenta entrenamientos, no descansos.
+    final trainingDayKeys = sessions
+        .where((s) => !s.isRestDay)
+        .map((s) => _dayKey(s.date))
+        .toSet();
 
     final monthDays = await _sessionService.getDaysWithSessionInMonth(
+      _calendarMonth.year,
+      _calendarMonth.month,
+    );
+    final monthRestDays = await _sessionService.getRestDaysInMonth(
       _calendarMonth.year,
       _calendarMonth.month,
     );
@@ -68,7 +79,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
     final today = DateTime.now();
     int streak = 0;
     DateTime cursor = DateTime(today.year, today.month, today.day);
-    while (allDayKeys.contains(_dayKey(cursor))) {
+    while (trainingDayKeys.contains(_dayKey(cursor))) {
       streak++;
       cursor = cursor.subtract(const Duration(days: 1));
     }
@@ -97,9 +108,12 @@ class _HistoryScreenState extends State<HistoryScreen> {
       }),
     );
 
+    final restKeys = monthRestDays.map(_dayKey).toSet();
     setState(() {
       _summaries = summaries;
-      _activeDays = monthDays.map(_dayKey).toSet();
+      _activeDays =
+          monthDays.map(_dayKey).toSet().difference(restKeys);
+      _restDays = restKeys;
       _streak = streak;
       _loading = false;
     });
@@ -115,7 +129,15 @@ class _HistoryScreenState extends State<HistoryScreen> {
       newMonth.year,
       newMonth.month,
     );
-    setState(() => _activeDays = monthDays.map(_dayKey).toSet());
+    final monthRestDays = await _sessionService.getRestDaysInMonth(
+      newMonth.year,
+      newMonth.month,
+    );
+    final restKeys = monthRestDays.map(_dayKey).toSet();
+    setState(() {
+      _activeDays = monthDays.map(_dayKey).toSet().difference(restKeys);
+      _restDays = restKeys;
+    });
   }
 
   Future<void> _deleteSession(Session session) async {
@@ -164,6 +186,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                   _CalendarCard(
                     month: _calendarMonth,
                     activeDays: _activeDays,
+                    restDays: _restDays,
                     onPrevMonth: () => _changeMonth(-1),
                     onNextMonth: () => _changeMonth(1),
                   ),
@@ -198,13 +221,11 @@ class _StreakBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
 
-    return Container(
+    return NeonGlassCard(
       margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-      decoration: BoxDecoration(
-        color: streak > 0 ? colors.primaryContainer : colors.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(16),
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+      borderRadius: 18,
+      glowColor: streak > 0 ? AppColors.primary : AppColors.muted,
       child: Row(
         children: [
           Text(
@@ -216,20 +237,20 @@ class _StreakBanner extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                streak > 0 ? '$streak día${streak == 1 ? '' : 's'} seguidos' : 'Sin racha activa',
-                style: TextStyle(
+                streak > 0
+                    ? '$streak día${streak == 1 ? '' : 's'} seguidos'
+                    : 'Sin racha activa',
+                style: const TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
-                  color: streak > 0 ? colors.onPrimaryContainer : colors.onSurface,
+                  color: AppColors.onBg,
                 ),
               ),
               Text(
                 streak > 0 ? '¡Sigue así!' : 'Entrena hoy para empezar',
                 style: TextStyle(
                   fontSize: 13,
-                  color: streak > 0
-                      ? colors.onPrimaryContainer.withValues(alpha: 0.7)
-                      : colors.outline,
+                  color: colors.outline,
                 ),
               ),
             ],
@@ -246,12 +267,14 @@ class _CalendarCard extends StatelessWidget {
   const _CalendarCard({
     required this.month,
     required this.activeDays,
+    required this.restDays,
     required this.onPrevMonth,
     required this.onNextMonth,
   });
 
   final DateTime month;
   final Set<String> activeDays;
+  final Set<String> restDays;
   final VoidCallback onPrevMonth;
   final VoidCallback onNextMonth;
 
@@ -273,11 +296,11 @@ class _CalendarCard extends StatelessWidget {
     final startOffset = (firstDay.weekday - 1) % 7;
     final daysInMonth = DateTime(month.year, month.month + 1, 0).day;
 
-    return Card(
+    return GlassCard(
       margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
+      padding: const EdgeInsets.all(16),
+      borderRadius: 22,
+      child: Column(
           children: [
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -324,20 +347,33 @@ class _CalendarCard extends StatelessWidget {
                 final day = index - startOffset + 1;
                 final key = _dayKey(month.year, month.month, day);
                 final isActive = activeDays.contains(key);
+                final isRest = restDays.contains(key);
                 final isToday = today.year == month.year &&
                     today.month == month.month &&
                     today.day == day;
 
+                Color bg;
+                Color textColor;
+                if (isActive) {
+                  bg = colors.primary;
+                  textColor = colors.onPrimary;
+                } else if (isRest) {
+                  bg = AppColors.secondary.withValues(alpha: 0.22);
+                  textColor = AppColors.secondary;
+                } else if (isToday) {
+                  bg = colors.surfaceContainerHighest;
+                  textColor = colors.onSurface;
+                } else {
+                  bg = Colors.transparent;
+                  textColor = colors.onSurface;
+                }
+
                 return Container(
                   margin: const EdgeInsets.all(2),
                   decoration: BoxDecoration(
-                    color: isActive
-                        ? colors.primary
-                        : isToday
-                            ? colors.surfaceContainerHighest
-                            : Colors.transparent,
+                    color: bg,
                     shape: BoxShape.circle,
-                    border: isToday && !isActive
+                    border: isToday && !isActive && !isRest
                         ? Border.all(color: colors.primary, width: 1.5)
                         : null,
                   ),
@@ -346,12 +382,10 @@ class _CalendarCard extends StatelessWidget {
                       '$day',
                       style: TextStyle(
                         fontSize: 13,
-                        fontWeight: isActive || isToday
+                        fontWeight: isActive || isRest || isToday
                             ? FontWeight.bold
                             : FontWeight.normal,
-                        color: isActive
-                            ? colors.onPrimary
-                            : colors.onSurface,
+                        color: textColor,
                       ),
                     ),
                   ),
@@ -360,7 +394,6 @@ class _CalendarCard extends StatelessWidget {
             ),
           ],
         ),
-      ),
     );
   }
 }
@@ -409,15 +442,21 @@ class _SessionCardState extends State<_SessionCard> {
     final exerciseData = widget.summary.exerciseData;
     final totalExercises = exerciseData.length;
     final totalSets = exerciseData.fold(0, (sum, e) => sum + e.sets.length);
+    final isRest = session.isRestDay;
+    final accent = isRest ? AppColors.secondary : colors.primary;
 
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+    return GlassCard(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      padding: EdgeInsets.zero,
+      borderRadius: 20,
       child: Column(
         children: [
           // ── Header ────────────────────────────────────────────────────────
           InkWell(
             borderRadius: BorderRadius.circular(12),
-            onTap: () => setState(() => _expanded = !_expanded),
+            onTap: isRest
+                ? null
+                : () => setState(() => _expanded = !_expanded),
             child: Padding(
               padding: const EdgeInsets.all(14),
               child: Column(
@@ -425,28 +464,35 @@ class _SessionCardState extends State<_SessionCard> {
                 children: [
                   Row(
                     children: [
-                      Icon(Icons.calendar_today_outlined,
-                          size: 15, color: colors.primary),
+                      Icon(
+                        isRest
+                            ? Icons.bedtime_outlined
+                            : Icons.calendar_today_outlined,
+                        size: 15,
+                        color: accent,
+                      ),
                       const SizedBox(width: 6),
                       Text(
                         _formatDate(session.date),
                         style: TextStyle(
                             fontWeight: FontWeight.bold,
-                            color: colors.primary,
+                            color: accent,
                             fontSize: 14),
                       ),
                       const SizedBox(width: 8),
                       Text(_formatTime(session.date),
                           style: TextStyle(color: colors.outline, fontSize: 12)),
                       const Spacer(),
-                      Icon(
-                        _expanded
-                            ? Icons.keyboard_arrow_up
-                            : Icons.keyboard_arrow_down,
-                        color: colors.outline,
-                        size: 20,
-                      ),
-                      const SizedBox(width: 4),
+                      if (!isRest) ...[
+                        Icon(
+                          _expanded
+                              ? Icons.keyboard_arrow_up
+                              : Icons.keyboard_arrow_down,
+                          color: colors.outline,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 4),
+                      ],
                       IconButton(
                         icon: const Icon(Icons.delete_outline, size: 18),
                         onPressed: widget.onDelete,
@@ -457,28 +503,39 @@ class _SessionCardState extends State<_SessionCard> {
                     ],
                   ),
                   const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      _InfoChip(
-                        icon: Icons.fitness_center,
-                        label: '$totalExercises ejercicio${totalExercises == 1 ? '' : 's'}',
-                        colors: colors,
-                      ),
-                      const SizedBox(width: 6),
-                      _InfoChip(
-                        icon: Icons.format_list_numbered,
-                        label: '$totalSets series',
-                        colors: colors,
-                      ),
-                    ],
-                  ),
+                  if (isRest)
+                    Row(
+                      children: [
+                        _InfoChip(
+                          icon: Icons.bedtime_outlined,
+                          label: 'Día de descanso',
+                          colors: colors,
+                        ),
+                      ],
+                    )
+                  else
+                    Row(
+                      children: [
+                        _InfoChip(
+                          icon: Icons.fitness_center,
+                          label: '$totalExercises ejercicio${totalExercises == 1 ? '' : 's'}',
+                          colors: colors,
+                        ),
+                        const SizedBox(width: 6),
+                        _InfoChip(
+                          icon: Icons.format_list_numbered,
+                          label: '$totalSets series',
+                          colors: colors,
+                        ),
+                      ],
+                    ),
                 ],
               ),
             ),
           ),
 
           // ── Detalle de ejercicios (expandible) ────────────────────────────
-          if (_expanded) ...[
+          if (_expanded && !isRest) ...[
             Divider(height: 1, color: colors.outlineVariant.withValues(alpha: 0.4)),
             Padding(
               padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),

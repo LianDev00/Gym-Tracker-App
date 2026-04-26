@@ -38,7 +38,9 @@ class AppTheme {
           outlineVariant:          AppColors.outline,
           error:                   Color(0xFFFF4466),
         ),
-        scaffoldBackgroundColor: AppColors.background,
+        // Scaffolds transparentes: el AppBackground global pinta el fondo con
+        // orbs de luz para que el blur de los GlassCard tenga algo que refractar.
+        scaffoldBackgroundColor: Colors.transparent,
         // Cards completamente transparentes — se usan GlassCard
         cardTheme: const CardThemeData(
           color: Colors.transparent,
@@ -131,6 +133,25 @@ class AppTheme {
         ),
         progressIndicatorTheme: const ProgressIndicatorThemeData(
           color: AppColors.primary,
+        ),
+        dialogTheme: DialogThemeData(
+          backgroundColor: const Color(0xCC0A0A1A),
+          surfaceTintColor: Colors.transparent,
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(22),
+            side: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+          ),
+          titleTextStyle: const TextStyle(
+            color: AppColors.onBg,
+            fontSize: 17,
+            fontWeight: FontWeight.w600,
+          ),
+          contentTextStyle: const TextStyle(
+            color: AppColors.onSurface,
+            fontSize: 14,
+            height: 1.5,
+          ),
         ),
         snackBarTheme: SnackBarThemeData(
           backgroundColor: AppColors.surface,
