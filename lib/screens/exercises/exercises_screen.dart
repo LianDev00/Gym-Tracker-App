@@ -2,7 +2,11 @@ import 'package:flutter/material.dart';
 import '../../core/widgets/info_button.dart';
 import '../../models/exercise.dart';
 import '../../models/muscle_category.dart';
+import '../../models/muscle_group.dart';
+import '../../models/muscle_state.dart';
 import '../../services/exercise_service.dart';
+import '../../widgets/body_atlas/body_atlas_palette.dart';
+import '../../widgets/body_atlas/muscle_atlas.dart';
 
 class ExercisesScreen extends StatefulWidget {
   const ExercisesScreen({super.key});
@@ -16,15 +20,17 @@ class _ExercisesScreenState extends State<ExercisesScreen> {
   final _search = TextEditingController();
 
   List<Exercise> _all = [];
-  List<Exercise> _filtered = [];
-  MuscleCategory? _selectedCategory;
   bool _loading = true;
+
+  BodyView _view = BodyView.front;
+  MuscleGroup? _selectedMuscle;
+  int? _selectedExerciseId;
 
   @override
   void initState() {
     super.initState();
     _load();
-    _search.addListener(_filter);
+    _search.addListener(() => setState(() {}));
   }
 
   @override
@@ -40,24 +46,50 @@ class _ExercisesScreenState extends State<ExercisesScreen> {
       _all = exercises;
       _loading = false;
     });
-    _filter();
   }
 
-  void _filter() {
-    final q = _search.text.toLowerCase();
+  void _onTapMuscle(MuscleGroup group) {
     setState(() {
-      _filtered = _all.where((e) {
-        final matchesQuery = e.name.toLowerCase().contains(q);
-        final matchesCategory =
-            _selectedCategory == null || e.muscleCategory == _selectedCategory;
-        return matchesQuery && matchesCategory;
-      }).toList();
+      _selectedExerciseId = null;
+      _selectedMuscle = _selectedMuscle == group ? null : group;
     });
   }
 
-  void _selectCategory(MuscleCategory? category) {
-    setState(() => _selectedCategory = category);
-    _filter();
+  void _onTapExercise(Exercise ex) {
+    setState(() {
+      _selectedExerciseId = _selectedExerciseId == ex.id ? null : ex.id;
+    });
+  }
+
+  Map<MuscleGroup, MuscleState> _atlasStates() {
+    if (_selectedExerciseId != null) {
+      final ex = _all.firstWhere(
+        (e) => e.id == _selectedExerciseId,
+        orElse: () =>
+            const Exercise(name: '', muscleCategory: MuscleCategory.cardio),
+      );
+      return {
+        for (final entry in ex.muscles.entries)
+          entry.key: switch (entry.value) {
+            MuscleRole.dominant => MuscleState.dominant,
+            MuscleRole.secondary => MuscleState.secondary,
+          }
+      };
+    }
+    if (_selectedMuscle != null) {
+      return {_selectedMuscle!: MuscleState.active};
+    }
+    return const {};
+  }
+
+  List<Exercise> _filteredExercises() {
+    final q = _search.text.toLowerCase();
+    return _all.where((e) {
+      final matchesQuery = e.name.toLowerCase().contains(q);
+      final matchesMuscle =
+          _selectedMuscle == null || e.muscles.containsKey(_selectedMuscle);
+      return matchesQuery && matchesMuscle;
+    }).toList();
   }
 
   void _showCreateDialog() {
@@ -96,17 +128,30 @@ class _ExercisesScreenState extends State<ExercisesScreen> {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final filtered = _filteredExercises();
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Ejercicios'),
         centerTitle: false,
         actions: const [
-          InfoButton(text: 'Lista de ejercicios disponibles. Puedes crear nuevos y reutilizarlos en tus sesiones.'),
+          InfoButton(
+              text:
+                  'Toca un músculo para filtrar ejercicios; toca un ejercicio para ver qué músculos trabaja.'),
         ],
       ),
       body: Column(
         children: [
+          // Atlas anatómico
+          _AtlasSection(
+            view: _view,
+            states: _atlasStates(),
+            onTapMuscle: _onTapMuscle,
+            onToggleView: (v) => setState(() => _view = v),
+          ),
+
+          const Divider(height: 1),
+
           // Search bar
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
@@ -118,47 +163,37 @@ class _ExercisesScreenState extends State<ExercisesScreen> {
                 suffixIcon: _search.text.isNotEmpty
                     ? IconButton(
                         icon: const Icon(Icons.clear),
-                        onPressed: () {
-                          _search.clear();
-                          _filter();
-                        },
+                        onPressed: () => _search.clear(),
                       )
                     : null,
                 isDense: true,
-                border:
-                    OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12)),
               ),
             ),
           ),
 
-          // Category filter chips
-          SizedBox(
-            height: 52,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              children: [
-                _FilterChip(
-                  label: 'Todos',
-                  selected: _selectedCategory == null,
-                  onTap: () => _selectCategory(null),
+          // Active muscle filter pill
+          if (_selectedMuscle != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: InputChip(
+                  label: Text('Músculo: ${_selectedMuscle!.displayName}'),
+                  onDeleted: () => setState(() => _selectedMuscle = null),
+                  deleteIcon: const Icon(Icons.close, size: 16),
                 ),
-                ...MuscleCategory.values.map((c) => _FilterChip(
-                      label: c.displayName,
-                      selected: _selectedCategory == c,
-                      onTap: () => _selectCategory(c),
-                    )),
-              ],
+              ),
             ),
-          ),
 
           // Count
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
             child: Row(
               children: [
                 Text(
-                  '${_filtered.length} ejercicio${_filtered.length == 1 ? '' : 's'}',
+                  '${filtered.length} ejercicio${filtered.length == 1 ? '' : 's'}',
                   style: TextStyle(color: colors.outline, fontSize: 12),
                 ),
               ],
@@ -169,7 +204,7 @@ class _ExercisesScreenState extends State<ExercisesScreen> {
           Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
-                : _filtered.isEmpty
+                : filtered.isEmpty
                     ? Center(
                         child: Text(
                           'Sin resultados',
@@ -177,7 +212,9 @@ class _ExercisesScreenState extends State<ExercisesScreen> {
                         ),
                       )
                     : _GroupedExerciseList(
-                        exercises: _filtered,
+                        exercises: filtered,
+                        selectedExerciseId: _selectedExerciseId,
+                        onTap: _onTapExercise,
                         onDelete: _deleteExercise,
                       ),
           ),
@@ -196,27 +233,78 @@ class _ExercisesScreenState extends State<ExercisesScreen> {
   }
 }
 
+// ── Atlas section ─────────────────────────────────────────────────────────────
+
+class _AtlasSection extends StatelessWidget {
+  const _AtlasSection({
+    required this.view,
+    required this.states,
+    required this.onTapMuscle,
+    required this.onToggleView,
+  });
+
+  final BodyView view;
+  final Map<MuscleGroup, MuscleState> states;
+  final ValueChanged<MuscleGroup> onTapMuscle;
+  final ValueChanged<BodyView> onToggleView;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 280,
+      child: Column(
+        children: [
+          const SizedBox(height: 6),
+          SegmentedButton<BodyView>(
+            segments: const [
+              ButtonSegment(value: BodyView.front, label: Text('Frente')),
+              ButtonSegment(value: BodyView.back, label: Text('Espalda')),
+            ],
+            selected: {view},
+            onSelectionChanged: (s) => onToggleView(s.first),
+          ),
+          const SizedBox(height: 4),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: MuscleAtlas(
+                view: view,
+                states: states,
+                onTapGroup: onTapMuscle,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 // ── Grouped exercise list ─────────────────────────────────────────────────────
 
 class _GroupedExerciseList extends StatelessWidget {
-  const _GroupedExerciseList(
-      {required this.exercises, required this.onDelete});
+  const _GroupedExerciseList({
+    required this.exercises,
+    required this.selectedExerciseId,
+    required this.onTap,
+    required this.onDelete,
+  });
 
   final List<Exercise> exercises;
+  final int? selectedExerciseId;
+  final void Function(Exercise) onTap;
   final void Function(Exercise) onDelete;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
 
-    // Group by category preserving MuscleCategory order
     final grouped = <MuscleCategory, List<Exercise>>{};
     for (final cat in MuscleCategory.values) {
       final items = exercises.where((e) => e.muscleCategory == cat).toList();
       if (items.isNotEmpty) grouped[cat] = items;
     }
 
-    // Build flat list of headers + items
     final items = <_ListItem>[];
     for (final entry in grouped.entries) {
       items.add(_ListItem.header(entry.key));
@@ -254,29 +342,42 @@ class _GroupedExerciseList extends StatelessWidget {
         }
 
         final ex = item.exercise!;
-        return ListTile(
-          title: Text(ex.name),
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (ex.isCustom)
-                Padding(
-                  padding: const EdgeInsets.only(right: 4),
-                  child: Chip(
-                    label: const Text('Custom'),
-                    padding: EdgeInsets.zero,
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    labelStyle: TextStyle(
-                        fontSize: 10, color: colors.onPrimaryContainer),
-                    backgroundColor: colors.primaryContainer,
-                  ),
-                ),
-              IconButton(
-                icon: const Icon(Icons.delete_outline, size: 20),
-                color: colors.error,
-                onPressed: () => onDelete(ex),
+        final isSelected = ex.id == selectedExerciseId;
+        return Container(
+          color: isSelected
+              ? BodyAtlasPalette.active.withValues(alpha: 0.12)
+              : null,
+          child: ListTile(
+            onTap: () => onTap(ex),
+            title: Text(
+              ex.name,
+              style: TextStyle(
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                color: isSelected ? BodyAtlasPalette.active : null,
               ),
-            ],
+            ),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (ex.isCustom)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 4),
+                    child: Chip(
+                      label: const Text('Custom'),
+                      padding: EdgeInsets.zero,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      labelStyle: TextStyle(
+                          fontSize: 10, color: colors.onPrimaryContainer),
+                      backgroundColor: colors.primaryContainer,
+                    ),
+                  ),
+                IconButton(
+                  icon: const Icon(Icons.delete_outline, size: 20),
+                  color: colors.error,
+                  onPressed: () => onDelete(ex),
+                ),
+              ],
+            ),
           ),
         );
       },
@@ -295,45 +396,6 @@ class _ListItem {
   final bool isHeader;
   final MuscleCategory? category;
   final Exercise? exercise;
-}
-
-// ── Filter chip ───────────────────────────────────────────────────────────────
-
-class _FilterChip extends StatelessWidget {
-  const _FilterChip(
-      {required this.label,
-      required this.selected,
-      required this.onTap});
-
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        margin: const EdgeInsets.only(right: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-        decoration: BoxDecoration(
-          color: selected ? colors.primary : colors.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: selected ? FontWeight.bold : FontWeight.normal,
-            color: selected ? colors.onPrimary : colors.onSurface,
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 // ── Create exercise dialog ────────────────────────────────────────────────────
@@ -390,8 +452,8 @@ class _CreateExerciseDialogState extends State<_CreateExerciseDialog> {
               border: OutlineInputBorder(),
             ),
             items: MuscleCategory.values
-                .map((c) => DropdownMenuItem(
-                    value: c, child: Text(c.displayName)))
+                .map((c) =>
+                    DropdownMenuItem(value: c, child: Text(c.displayName)))
                 .toList(),
             onChanged: (v) => setState(() => _category = v!),
           ),

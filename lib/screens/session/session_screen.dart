@@ -5,6 +5,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/theme/glass_kit.dart';
 import '../../models/exercise.dart';
 import '../../models/muscle_category.dart';
+import '../../models/muscle_group.dart';
 import '../../models/routine.dart';
 import '../../models/session.dart';
 import '../../models/session_exercise.dart';
@@ -13,6 +14,7 @@ import '../../services/exercise_service.dart';
 import '../../services/routine_service.dart';
 import '../../services/session_notifier.dart';
 import '../../services/session_service.dart';
+import '../../widgets/body_atlas/muscle_mini_view.dart';
 
 // ── Data holders ──────────────────────────────────────────────────────────────
 
@@ -626,7 +628,7 @@ class _ExerciseCard extends StatelessWidget {
                 padding: EdgeInsets.only(bottom: 4),
                 child: Row(
                   children: [
-                    SizedBox(width: 32),
+                    SizedBox(width: 52),
                     Expanded(
                       child: Text('Peso (kg)',
                           style: TextStyle(
@@ -667,6 +669,7 @@ class _ExerciseCard extends StatelessWidget {
                   (e) => _SetRow(
                     index: e.key,
                     setEntry: e.value,
+                    dominantMuscle: _dominantMuscleOf(entry.exercise),
                     onRemove: () => onRemoveSet(e.value),
                   ),
                 ),
@@ -690,14 +693,23 @@ class _ExerciseCard extends StatelessWidget {
 
 // ── Set row ───────────────────────────────────────────────────────────────────
 
+MuscleGroup? _dominantMuscleOf(Exercise ex) {
+  for (final entry in ex.muscles.entries) {
+    if (entry.value == MuscleRole.dominant) return entry.key;
+  }
+  return null;
+}
+
 class _SetRow extends StatelessWidget {
   const _SetRow(
       {required this.index,
       required this.setEntry,
+      required this.dominantMuscle,
       required this.onRemove});
 
   final int index;
   final _SetEntry setEntry;
+  final MuscleGroup? dominantMuscle;
   final VoidCallback onRemove;
 
   @override
@@ -707,7 +719,25 @@ class _SetRow extends StatelessWidget {
       child: Row(
         children: [
           SizedBox(
-            width: 32,
+            width: 28,
+            height: 36,
+            child: dominantMuscle == null
+                ? const SizedBox.shrink()
+                : Container(
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.06),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(
+                        color: AppColors.primary.withValues(alpha: 0.18),
+                        width: 0.5,
+                      ),
+                    ),
+                    padding: const EdgeInsets.all(2),
+                    child: MuscleMiniView(group: dominantMuscle!),
+                  ),
+          ),
+          SizedBox(
+            width: 24,
             child: Text(
               '${index + 1}',
               textAlign: TextAlign.center,
