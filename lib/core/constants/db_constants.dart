@@ -3,7 +3,7 @@
 abstract final class DbConstants {
   // ── Base de datos ────────────────────────────────────────────────────────────
   static const String dbName = 'gym_tracker.db';
-  static const int dbVersion = 5;
+  static const int dbVersion = 6;
 
   // ── Tabla: exercises ─────────────────────────────────────────────────────────
   static const String tExercises = 'exercises';
@@ -11,6 +11,13 @@ abstract final class DbConstants {
   static const String cExName = 'name';
   static const String cExMuscleCategory = 'muscle_category';
   static const String cExIsCustom = 'is_custom';
+
+  // ── Tabla: exercise_muscles (join, granular muscle attribution) ──────────────
+  static const String tExerciseMuscles = 'exercise_muscles';
+  static const String cEmId = 'id';
+  static const String cEmExerciseId = 'exercise_id';
+  static const String cEmMuscleGroup = 'muscle_group';
+  static const String cEmRole = 'role';
 
   // ── Tabla: sessions ──────────────────────────────────────────────────────────
   static const String tSessions = 'sessions';

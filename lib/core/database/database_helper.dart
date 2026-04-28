@@ -2,6 +2,7 @@ import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 
 import '../constants/db_constants.dart';
+import '../../models/muscle_group.dart';
 
 /// Singleton que gestiona la conexión y creación de la base de datos SQLite.
 class DatabaseHelper {
@@ -56,6 +57,10 @@ class DatabaseHelper {
         'ALTER TABLE ${DbConstants.tSessions} ADD COLUMN ${DbConstants.cSeIsRestDay} INTEGER NOT NULL DEFAULT 0',
       );
     }
+    if (oldVersion < 6) {
+      await db.execute(_createExerciseMuscles);
+      await _seedExerciseMuscles(db);
+    }
   }
 
   /// Activa las foreign keys de SQLite (desactivadas por defecto).
@@ -72,7 +77,9 @@ class DatabaseHelper {
     await db.execute(_createRoutineExercises);
     await db.execute(_createBodyEntries);
     await db.execute(_createBodyMeasurements);
+    await db.execute(_createExerciseMuscles);
     await _seedDefaultExercises(db);
+    await _seedExerciseMuscles(db);
   }
 
   // ── DDL ───────────────────────────────────────────────────────────────────────
@@ -170,6 +177,18 @@ class DatabaseHelper {
     )
   ''';
 
+  static const _createExerciseMuscles = '''
+    CREATE TABLE ${DbConstants.tExerciseMuscles} (
+      ${DbConstants.cEmId}          INTEGER PRIMARY KEY AUTOINCREMENT,
+      ${DbConstants.cEmExerciseId}  INTEGER NOT NULL
+        REFERENCES ${DbConstants.tExercises}(${DbConstants.cExId})
+        ON DELETE CASCADE,
+      ${DbConstants.cEmMuscleGroup} TEXT NOT NULL,
+      ${DbConstants.cEmRole}        TEXT NOT NULL,
+      UNIQUE(${DbConstants.cEmExerciseId}, ${DbConstants.cEmMuscleGroup})
+    )
+  ''';
+
   // ── Seed: ejercicios predefinidos ─────────────────────────────────────────────
 
   Future<void> _seedDefaultExercises(Database db) async {
@@ -224,4 +243,170 @@ class DatabaseHelper {
     }
     await batch.commit(noResult: true);
   }
+
+  // ── Seed: atribución muscular granular ───────────────────────────────────────
+
+  /// Inserta filas en `exercise_muscles` para cada ejercicio preset cuya
+  /// definición exista en [_presetExerciseMuscles]. Busca por nombre, así que
+  /// si un usuario renombró un preset antes de la migración v6, queda sin
+  /// músculos atribuidos (los puede agregar a mano luego).
+  Future<void> _seedExerciseMuscles(Database db) async {
+    final rows = await db.query(
+      DbConstants.tExercises,
+      columns: [DbConstants.cExId, DbConstants.cExName],
+    );
+    final nameToId = <String, int>{
+      for (final r in rows)
+        r[DbConstants.cExName] as String: r[DbConstants.cExId] as int,
+    };
+
+    final batch = db.batch();
+    for (final entry in _presetExerciseMuscles.entries) {
+      final exId = nameToId[entry.key];
+      if (exId == null) continue;
+      for (final muscleEntry in entry.value.entries) {
+        batch.insert(DbConstants.tExerciseMuscles, {
+          DbConstants.cEmExerciseId: exId,
+          DbConstants.cEmMuscleGroup: muscleEntry.key.name,
+          DbConstants.cEmRole: muscleEntry.value.name,
+        });
+      }
+    }
+    await batch.commit(noResult: true);
+  }
+
+  /// Atribución muscular para los ejercicios preset definidos en
+  /// [_seedDefaultExercises]. La clave es el nombre del ejercicio.
+  /// Cardio queda fuera — no pinta regiones del cuerpo.
+  static final Map<String, Map<MuscleGroup, MuscleRole>>
+      _presetExerciseMuscles = {
+    // Pecho
+    'Press banca': {
+      MuscleGroup.chest: MuscleRole.dominant,
+      MuscleGroup.shouldersFront: MuscleRole.secondary,
+      MuscleGroup.triceps: MuscleRole.secondary,
+    },
+    'Press inclinado': {
+      MuscleGroup.chest: MuscleRole.dominant,
+      MuscleGroup.shouldersFront: MuscleRole.secondary,
+      MuscleGroup.triceps: MuscleRole.secondary,
+    },
+    'Aperturas con mancuernas': {
+      MuscleGroup.chest: MuscleRole.dominant,
+      MuscleGroup.shouldersFront: MuscleRole.secondary,
+    },
+    'Fondos en paralelas': {
+      MuscleGroup.chest: MuscleRole.dominant,
+      MuscleGroup.triceps: MuscleRole.secondary,
+      MuscleGroup.shouldersFront: MuscleRole.secondary,
+    },
+    // Espalda
+    'Dominadas': {
+      MuscleGroup.lats: MuscleRole.dominant,
+      MuscleGroup.biceps: MuscleRole.secondary,
+      MuscleGroup.midBack: MuscleRole.secondary,
+      MuscleGroup.shouldersRear: MuscleRole.secondary,
+    },
+    'Remo con barra': {
+      MuscleGroup.midBack: MuscleRole.dominant,
+      MuscleGroup.lats: MuscleRole.secondary,
+      MuscleGroup.biceps: MuscleRole.secondary,
+      MuscleGroup.shouldersRear: MuscleRole.secondary,
+    },
+    'Jalón al pecho': {
+      MuscleGroup.lats: MuscleRole.dominant,
+      MuscleGroup.biceps: MuscleRole.secondary,
+      MuscleGroup.midBack: MuscleRole.secondary,
+    },
+    'Remo con mancuerna': {
+      MuscleGroup.midBack: MuscleRole.dominant,
+      MuscleGroup.lats: MuscleRole.secondary,
+      MuscleGroup.biceps: MuscleRole.secondary,
+    },
+    // Hombros
+    'Press militar': {
+      MuscleGroup.shouldersFront: MuscleRole.dominant,
+      MuscleGroup.shouldersLateral: MuscleRole.secondary,
+      MuscleGroup.triceps: MuscleRole.secondary,
+      MuscleGroup.traps: MuscleRole.secondary,
+    },
+    'Elevaciones laterales': {
+      MuscleGroup.shouldersLateral: MuscleRole.dominant,
+      MuscleGroup.shouldersFront: MuscleRole.secondary,
+      MuscleGroup.traps: MuscleRole.secondary,
+    },
+    'Elevaciones frontales': {
+      MuscleGroup.shouldersFront: MuscleRole.dominant,
+      MuscleGroup.shouldersLateral: MuscleRole.secondary,
+    },
+    // Bíceps
+    'Curl con barra': {
+      MuscleGroup.biceps: MuscleRole.dominant,
+      MuscleGroup.forearms: MuscleRole.secondary,
+    },
+    'Curl con mancuernas': {
+      MuscleGroup.biceps: MuscleRole.dominant,
+      MuscleGroup.forearms: MuscleRole.secondary,
+    },
+    'Curl martillo': {
+      MuscleGroup.biceps: MuscleRole.dominant,
+      MuscleGroup.forearms: MuscleRole.secondary,
+    },
+    // Tríceps
+    'Extensión tríceps polea': {
+      MuscleGroup.triceps: MuscleRole.dominant,
+      MuscleGroup.forearms: MuscleRole.secondary,
+    },
+    'Press francés': {
+      MuscleGroup.triceps: MuscleRole.dominant,
+      MuscleGroup.forearms: MuscleRole.secondary,
+    },
+    'Fondos en banco': {
+      MuscleGroup.triceps: MuscleRole.dominant,
+      MuscleGroup.chest: MuscleRole.secondary,
+      MuscleGroup.shouldersFront: MuscleRole.secondary,
+    },
+    // Piernas
+    'Sentadilla': {
+      MuscleGroup.quads: MuscleRole.dominant,
+      MuscleGroup.glutes: MuscleRole.secondary,
+      MuscleGroup.hamstrings: MuscleRole.secondary,
+      MuscleGroup.lowerBack: MuscleRole.secondary,
+    },
+    'Prensa de piernas': {
+      MuscleGroup.quads: MuscleRole.dominant,
+      MuscleGroup.glutes: MuscleRole.secondary,
+      MuscleGroup.hamstrings: MuscleRole.secondary,
+    },
+    'Extensión de cuádriceps': {
+      MuscleGroup.quads: MuscleRole.dominant,
+    },
+    'Curl femoral': {
+      MuscleGroup.hamstrings: MuscleRole.dominant,
+    },
+    // Glúteos
+    'Hip thrust': {
+      MuscleGroup.glutes: MuscleRole.dominant,
+      MuscleGroup.hamstrings: MuscleRole.secondary,
+    },
+    'Peso muerto rumano': {
+      MuscleGroup.hamstrings: MuscleRole.dominant,
+      MuscleGroup.glutes: MuscleRole.secondary,
+      MuscleGroup.lowerBack: MuscleRole.secondary,
+    },
+    // Core
+    'Plancha': {
+      MuscleGroup.abs: MuscleRole.dominant,
+      MuscleGroup.obliques: MuscleRole.secondary,
+      MuscleGroup.lowerBack: MuscleRole.secondary,
+    },
+    'Crunch abdominal': {
+      MuscleGroup.abs: MuscleRole.dominant,
+    },
+    'Rueda abdominal': {
+      MuscleGroup.abs: MuscleRole.dominant,
+      MuscleGroup.obliques: MuscleRole.secondary,
+    },
+    // Cardio — sin atribución (la figura queda en idle/recovering).
+  };
 }
