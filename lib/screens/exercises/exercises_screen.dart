@@ -7,6 +7,7 @@ import '../../models/muscle_state.dart';
 import '../../services/exercise_service.dart';
 import '../../widgets/body_atlas/body_atlas_palette.dart';
 import '../../widgets/body_atlas/muscle_atlas.dart';
+import '../../widgets/dialogs/exercise_form_dialog.dart';
 
 class ExercisesScreen extends StatefulWidget {
   const ExercisesScreen({super.key});
@@ -92,16 +93,20 @@ class _ExercisesScreenState extends State<ExercisesScreen> {
     }).toList();
   }
 
-  void _showCreateDialog() {
-    showDialog(
+  Future<void> _showCreateDialog() async {
+    final result = await showDialog<Exercise>(
       context: context,
-      builder: (_) => _CreateExerciseDialog(
-        onCreated: (exercise) async {
-          await _service.insert(exercise);
-          await _load();
-        },
-      ),
+      builder: (_) => const ExerciseFormDialog(),
     );
+    if (result != null) await _load();
+  }
+
+  Future<void> _showEditDialog(Exercise exercise) async {
+    final result = await showDialog<Exercise>(
+      context: context,
+      builder: (_) => ExerciseFormDialog(initial: exercise),
+    );
+    if (result != null) await _load();
   }
 
   Future<void> _deleteExercise(Exercise exercise) async {
@@ -215,6 +220,7 @@ class _ExercisesScreenState extends State<ExercisesScreen> {
                         exercises: filtered,
                         selectedExerciseId: _selectedExerciseId,
                         onTap: _onTapExercise,
+                        onEdit: _showEditDialog,
                         onDelete: _deleteExercise,
                       ),
           ),
@@ -287,12 +293,14 @@ class _GroupedExerciseList extends StatelessWidget {
     required this.exercises,
     required this.selectedExerciseId,
     required this.onTap,
+    required this.onEdit,
     required this.onDelete,
   });
 
   final List<Exercise> exercises;
   final int? selectedExerciseId;
   final void Function(Exercise) onTap;
+  final void Function(Exercise) onEdit;
   final void Function(Exercise) onDelete;
 
   @override
@@ -372,6 +380,11 @@ class _GroupedExerciseList extends StatelessWidget {
                     ),
                   ),
                 IconButton(
+                  icon: const Icon(Icons.edit_outlined, size: 20),
+                  color: colors.primary,
+                  onPressed: () => onEdit(ex),
+                ),
+                IconButton(
                   icon: const Icon(Icons.delete_outline, size: 20),
                   color: colors.error,
                   onPressed: () => onDelete(ex),
@@ -398,73 +411,3 @@ class _ListItem {
   final Exercise? exercise;
 }
 
-// ── Create exercise dialog ────────────────────────────────────────────────────
-
-class _CreateExerciseDialog extends StatefulWidget {
-  const _CreateExerciseDialog({required this.onCreated});
-  final void Function(Exercise) onCreated;
-
-  @override
-  State<_CreateExerciseDialog> createState() => _CreateExerciseDialogState();
-}
-
-class _CreateExerciseDialogState extends State<_CreateExerciseDialog> {
-  final _nameCtrl = TextEditingController();
-  MuscleCategory _category = MuscleCategory.pecho;
-
-  @override
-  void dispose() {
-    _nameCtrl.dispose();
-    super.dispose();
-  }
-
-  void _save() {
-    final name = _nameCtrl.text.trim();
-    if (name.isEmpty) return;
-    Navigator.pop(context);
-    widget.onCreated(
-      Exercise(name: name, muscleCategory: _category, isCustom: true),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Nuevo ejercicio'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TextField(
-            controller: _nameCtrl,
-            autofocus: true,
-            textCapitalization: TextCapitalization.sentences,
-            decoration: const InputDecoration(
-              labelText: 'Nombre',
-              border: OutlineInputBorder(),
-            ),
-            onSubmitted: (_) => _save(),
-          ),
-          const SizedBox(height: 16),
-          DropdownButtonFormField<MuscleCategory>(
-            initialValue: _category,
-            decoration: const InputDecoration(
-              labelText: 'Grupo muscular',
-              border: OutlineInputBorder(),
-            ),
-            items: MuscleCategory.values
-                .map((c) =>
-                    DropdownMenuItem(value: c, child: Text(c.displayName)))
-                .toList(),
-            onChanged: (v) => setState(() => _category = v!),
-          ),
-        ],
-      ),
-      actions: [
-        TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar')),
-        FilledButton(onPressed: _save, child: const Text('Guardar')),
-      ],
-    );
-  }
-}

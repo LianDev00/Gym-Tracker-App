@@ -5,7 +5,6 @@ import '../../core/theme/app_theme.dart';
 import '../../core/theme/glass_kit.dart';
 import '../../models/exercise.dart';
 import '../../models/muscle_category.dart';
-import '../../models/muscle_group.dart';
 import '../../models/routine.dart';
 import '../../models/session.dart';
 import '../../models/session_exercise.dart';
@@ -14,7 +13,7 @@ import '../../services/exercise_service.dart';
 import '../../services/routine_service.dart';
 import '../../services/session_notifier.dart';
 import '../../services/session_service.dart';
-import '../../widgets/body_atlas/muscle_mini_view.dart';
+import '../../widgets/dialogs/exercise_form_dialog.dart';
 
 // ── Data holders ──────────────────────────────────────────────────────────────
 
@@ -264,7 +263,9 @@ class _SessionScreenState extends State<SessionScreen> {
     );
     final entry = _ExerciseEntry(exercise: exercise, sessionExerciseId: se.id!);
     setState(() => _entries.add(entry));
-    await _addSet(entry);
+    for (var i = 0; i < 3; i++) {
+      await _addSet(entry);
+    }
   }
 
   Future<void> _addSet(_ExerciseEntry entry) async {
@@ -628,7 +629,7 @@ class _ExerciseCard extends StatelessWidget {
                 padding: EdgeInsets.only(bottom: 4),
                 child: Row(
                   children: [
-                    SizedBox(width: 52),
+                    SizedBox(width: 32),
                     Expanded(
                       child: Text('Peso (kg)',
                           style: TextStyle(
@@ -669,7 +670,6 @@ class _ExerciseCard extends StatelessWidget {
                   (e) => _SetRow(
                     index: e.key,
                     setEntry: e.value,
-                    dominantMuscle: _dominantMuscleOf(entry.exercise),
                     onRemove: () => onRemoveSet(e.value),
                   ),
                 ),
@@ -693,23 +693,14 @@ class _ExerciseCard extends StatelessWidget {
 
 // ── Set row ───────────────────────────────────────────────────────────────────
 
-MuscleGroup? _dominantMuscleOf(Exercise ex) {
-  for (final entry in ex.muscles.entries) {
-    if (entry.value == MuscleRole.dominant) return entry.key;
-  }
-  return null;
-}
-
 class _SetRow extends StatelessWidget {
   const _SetRow(
       {required this.index,
       required this.setEntry,
-      required this.dominantMuscle,
       required this.onRemove});
 
   final int index;
   final _SetEntry setEntry;
-  final MuscleGroup? dominantMuscle;
   final VoidCallback onRemove;
 
   @override
@@ -719,25 +710,7 @@ class _SetRow extends StatelessWidget {
       child: Row(
         children: [
           SizedBox(
-            width: 28,
-            height: 36,
-            child: dominantMuscle == null
-                ? const SizedBox.shrink()
-                : Container(
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withValues(alpha: 0.06),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(
-                        color: AppColors.primary.withValues(alpha: 0.18),
-                        width: 0.5,
-                      ),
-                    ),
-                    padding: const EdgeInsets.all(2),
-                    child: MuscleMiniView(group: dominantMuscle!),
-                  ),
-          ),
-          SizedBox(
-            width: 24,
+            width: 32,
             child: Text(
               '${index + 1}',
               textAlign: TextAlign.center,
@@ -862,10 +835,12 @@ class _ExercisePickerSheetState extends State<_ExercisePickerSheet> {
   void _showCreateDialog() {
     final onSelected = widget.onSelected;
     Navigator.pop(context);
-    showDialog(
+    showDialog<Exercise>(
       context: widget.parentContext,
-      builder: (_) => _CreateExerciseDialog(onCreated: onSelected),
-    );
+      builder: (_) => const ExerciseFormDialog(),
+    ).then((result) {
+      if (result != null) onSelected(result);
+    });
   }
 
   @override
@@ -1095,89 +1070,6 @@ class _RoutinePickerSheet extends StatelessWidget {
   }
 }
 
-// ── Create exercise dialog ────────────────────────────────────────────────────
-
-class _CreateExerciseDialog extends StatefulWidget {
-  const _CreateExerciseDialog({required this.onCreated});
-  final void Function(Exercise) onCreated;
-
-  @override
-  State<_CreateExerciseDialog> createState() => _CreateExerciseDialogState();
-}
-
-class _CreateExerciseDialogState extends State<_CreateExerciseDialog> {
-  final _nameCtrl = TextEditingController();
-  MuscleCategory _category = MuscleCategory.pecho;
-  bool _saving = false;
-
-  @override
-  void dispose() {
-    _nameCtrl.dispose();
-    super.dispose();
-  }
-
-  Future<void> _save() async {
-    final name = _nameCtrl.text.trim();
-    if (name.isEmpty) return;
-    setState(() => _saving = true);
-    final exercise = await ExerciseService.instance.insert(
-      Exercise(name: name, muscleCategory: _category, isCustom: true),
-    );
-    if (mounted) {
-      Navigator.pop(context);
-      widget.onCreated(exercise);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Nuevo ejercicio'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TextField(
-            controller: _nameCtrl,
-            autofocus: true,
-            textCapitalization: TextCapitalization.sentences,
-            decoration: const InputDecoration(
-              labelText: 'Nombre',
-              border: OutlineInputBorder(),
-            ),
-            onSubmitted: (_) => _save(),
-          ),
-          const SizedBox(height: 16),
-          DropdownButtonFormField<MuscleCategory>(
-            initialValue: _category,
-            decoration: const InputDecoration(
-              labelText: 'Grupo muscular',
-              border: OutlineInputBorder(),
-            ),
-            items: MuscleCategory.values
-                .map((c) => DropdownMenuItem(
-                    value: c, child: Text(c.displayName)))
-                .toList(),
-            onChanged: (v) => setState(() => _category = v!),
-          ),
-        ],
-      ),
-      actions: [
-        TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar')),
-        FilledButton(
-          onPressed: _saving ? null : _save,
-          child: _saving
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2))
-              : const Text('Guardar'),
-        ),
-      ],
-    );
-  }
-}
 
 // ── Week header ───────────────────────────────────────────────────────────────
 
