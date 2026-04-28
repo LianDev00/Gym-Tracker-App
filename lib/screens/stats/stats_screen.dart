@@ -8,6 +8,7 @@ import '../../models/exercise.dart';
 import '../../models/muscle_category.dart';
 import '../../services/exercise_service.dart';
 import '../../services/statistics_service.dart';
+import '../body_figure_preview_screen.dart';
 
 String _fmtKg(double v) {
   final n = v.round();
@@ -234,11 +235,37 @@ class _StatsScreenState extends State<StatsScreen> {
                   _PersonalRecordsCard(prs: _prs),
 
                   const SizedBox(height: 24),
+                  const _BodyFigurePreviewLink(),
+                  const SizedBox(height: 16),
                   const _BrandFooter(),
                   const SizedBox(height: 12),
                 ],
               ),
             ),
+    );
+  }
+}
+
+class _BodyFigurePreviewLink extends StatelessWidget {
+  const _BodyFigurePreviewLink();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: OutlinedButton.icon(
+        onPressed: () => Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => const BodyFigurePreviewScreen(),
+          ),
+        ),
+        icon: const Icon(Icons.accessibility_new_rounded, size: 18),
+        label: const Text('Diseño v2 — Figura anatómica (preview)'),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppColors.onSurface,
+          side: const BorderSide(color: AppColors.outline),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        ),
+      ),
     );
   }
 }
