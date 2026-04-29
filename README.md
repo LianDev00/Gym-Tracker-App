@@ -20,6 +20,7 @@ Aplicación móvil de seguimiento de entrenamiento desarrollada en Flutter. Perm
 | [path](https://pub.dev/packages/path) | ^1.9.0 | Manejo de rutas de archivos |
 | [flutter_native_splash](https://pub.dev/packages/flutter_native_splash) | ^2.4.3 | Pantalla de carga nativa |
 | [flutter_launcher_icons](https://pub.dev/packages/flutter_launcher_icons) | ^0.14.3 | Generación de íconos de la app |
+| [flutter_body_atlas](https://pub.dev/packages/flutter_body_atlas) | ^0.1.4 | Atlas anatómico SVG interactivo (highlight, tap, hover por músculo) |
 
 ---
 
@@ -42,27 +43,38 @@ lib/
 │   ├── session.dart
 │   ├── session_exercise.dart
 │   ├── session_set.dart
-│   ├── exercise.dart
+│   ├── exercise.dart               # Incluye atribución granular Map<MuscleGroup, MuscleRole>
 │   ├── routine.dart
 │   ├── routine_exercise.dart
 │   ├── body_entry.dart
 │   ├── body_measurement.dart
-│   └── muscle_category.dart
+│   ├── muscle_category.dart        # Agrupación coarse para listas (pecho, espalda, etc.)
+│   ├── muscle_group.dart           # Granularidad anatómica para la figura corporal
+│   └── muscle_state.dart           # Estados visuales (idle/recovering/secondary/active/dominant)
 │
 ├── services/                       # Acceso a datos (singletons, operaciones CRUD y queries)
 │   ├── session_service.dart        # CRUD de Session, SessionExercise y SessionSet
 │   ├── statistics_service.dart     # Queries agregadas de solo lectura
-│   ├── exercise_service.dart
+│   ├── session_state_composer.dart # Función pura: deriva MuscleState por sesión
+│   ├── exercise_service.dart       # CRUD + persistencia transaccional de exercise_muscles
 │   ├── routine_service.dart
 │   ├── body_service.dart
 │   ├── export_service.dart
 │   └── session_notifier.dart       # ValueNotifier para comunicación entre pantallas
 │
+├── widgets/
+│   ├── body_atlas/                 # Atlas anatómico SVG interactivo
+│   │   ├── muscle_atlas.dart       # Widget principal (dim por defecto, tap → callback)
+│   │   ├── muscle_group_atlas_mapping.dart  # MuscleGroup ↔ atlas.Muscle (bidireccional)
+│   │   └── body_atlas_palette.dart # Paleta esmeralda + enum BodyView
+│   └── dialogs/
+│       └── exercise_form_dialog.dart  # Crear/editar ejercicio con asignación muscular
+│
 ├── screens/                        # Una carpeta por pantalla
 │   ├── home/
 │   ├── session/
 │   ├── history/
-│   ├── exercises/
+│   ├── exercises/                  # Atlas + lista bidireccional
 │   ├── routines/
 │   ├── body/
 │   └── stats/
@@ -82,6 +94,14 @@ Session  (fecha, hora)
 
 La sesión es la **fuente de verdad**. El historial y las estadísticas leen directamente desde las sesiones registradas. Las eliminaciones usan `ON DELETE CASCADE` para mantener integridad referencial.
 
+Adicionalmente, cada `Exercise` tiene una atribución muscular granular en una tabla join:
+
+```
+Exercise  ⇄  MuscleGroup  (con MuscleRole: dominant | secondary)
+```
+
+Esto desacopla la categoría amplia (`MuscleCategory.pecho`) de los grupos finos que la figura anatómica necesita pintar (`MuscleGroup.chest`, `shouldersFront`, etc.). El servicio carga y guarda la atribución de forma transaccional.
+
 ### Flujo principal
 
 ```
@@ -100,8 +120,8 @@ Sesión → Agregar ejercicio o rutina
 - Auto-guardado: cualquier cambio en peso, reps o RIR se guarda automáticamente 600 ms después de escribir.
 - Al volver a un día anterior, los datos se restauran exactamente como se dejaron.
 - Hora real registrada al crear la sesión.
-- Agregar ejercicios individuales o cargar una rutina completa.
-- Crear nuevos ejercicios personalizados desde el picker.
+- Agregar ejercicios individuales o cargar una rutina completa — en ambos casos se generan **3 series por defecto** para acelerar el flujo.
+- Crear nuevos ejercicios personalizados desde el picker (con asignación muscular incluida).
 
 ### Historial
 - Calendario mensual con días entrenados marcados.
@@ -115,10 +135,17 @@ Sesión → Agregar ejercicio o rutina
 - **Progreso por Ejercicio**: gráfica del peso máximo histórico por ejercicio.
 - **Récords Personales**: top 10 pesos máximos por ejercicio con fecha.
 
-### Ejercicios y Rutinas
-- Biblioteca de ejercicios predefinidos agrupados por grupo muscular.
-- Creación de ejercicios personalizados.
-- Rutinas reutilizables que se pueden cargar directamente en una sesión.
+### Ejercicios
+- **Atlas anatómico interactivo** en la parte superior: el cuerpo se ve apagado por defecto y los músculos se iluminan al interactuar.
+- Toggle frente / espalda.
+- **Filtrado bidireccional**:
+  - Tocar un músculo del atlas filtra la lista de ejercicios que lo trabajan.
+  - Tocar un ejercicio de la lista ilumina sus músculos en el atlas (Principal → tono claro intenso, Apoyo → tono medio).
+- **Crear o editar ejercicios** con asignación granular: cada `MuscleGroup` puede marcarse como **Principal** (motor del movimiento) o **Apoyo** (sinergista). El editor reemplaza la atribución completa al guardar (transaccional).
+- Biblioteca de ejercicios predefinidos pre-asignados a los músculos correspondientes.
+
+### Rutinas
+- Rutinas reutilizables que se pueden cargar directamente en una sesión (con 3 series por ejercicio).
 
 ### Cuerpo
 - Registro de peso corporal e historial de medidas.
@@ -176,8 +203,8 @@ dart run flutter_native_splash:create
 3. Tocar **+ Agregar** y elegir:
    - **Ejercicio individual** → seleccionar de la lista o crear uno nuevo.
    - **Cargar rutina** → agregar todos los ejercicios de una rutina guardada.
-4. Por cada ejercicio se crea automáticamente la primera serie. Ingresar **peso (kg)**, **reps** y **RIR**.
-5. Tocar **Agregar serie** para sumar más series al ejercicio.
+4. Por cada ejercicio se crean automáticamente **3 series**. Ingresar **peso (kg)**, **reps** y **RIR** en cada una.
+5. Tocar **Agregar serie** para sumar series adicionales, o el botón ✕ para borrar series sobrantes.
 6. Los datos se guardan solos; no hay botón de guardar.
 
 ### 2. Navegar entre días
@@ -204,12 +231,22 @@ dart run flutter_native_splash:create
 2. Nombrar la rutina y agregar ejercicios con series y reps objetivo.
 3. Al registrar una sesión, seleccionar **Cargar rutina** para importar todos los ejercicios de golpe.
 
+### 6. Explorar y editar ejercicios
+
+1. Ir a **Ejercicios**.
+2. Tocar un músculo en el atlas para filtrar la lista a los ejercicios que lo trabajan.
+3. Tocar un ejercicio de la lista para iluminar en el atlas todos los músculos que involucra (Principal vs. Apoyo se distinguen por color).
+4. Tocar el ícono de **lápiz** ✎ junto a cualquier ejercicio para editar nombre, categoría y la asignación granular de músculos.
+5. Tocar **+** para crear un ejercicio personalizado nuevo, definiendo desde el inicio los músculos que trabaja.
+
 ---
 
 ## Estructura de la base de datos
 
 ```sql
 exercises        (id, name, muscle_category, is_custom)
+exercise_muscles (id, exercise_id → CASCADE, muscle_group, role,
+                  UNIQUE(exercise_id, muscle_group))
 sessions         (id, date, duration_seconds, notes, routine_id)
 session_exercises(id, session_id → CASCADE, exercise_id, exercise_order)
 session_sets     (id, session_exercise_id → CASCADE, set_number, reps, weight_kg, rir, rpe)
@@ -226,3 +263,9 @@ La base de datos se crea automáticamente en el primer arranque con un conjunto 
 ## Versión
 
 **1.3.0+7**
+
+---
+
+## Créditos
+
+- **Atlas anatómico SVG**: paquete [`flutter_body_atlas`](https://pub.dev/packages/flutter_body_atlas) — código bajo BSD 3-Clause; assets SVG por **Ryan Graves**, licenciados bajo [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).

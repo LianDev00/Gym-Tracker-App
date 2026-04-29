@@ -13,6 +13,7 @@ import '../../services/exercise_service.dart';
 import '../../services/routine_service.dart';
 import '../../services/session_notifier.dart';
 import '../../services/session_service.dart';
+import '../../widgets/dialogs/exercise_form_dialog.dart';
 
 // ── Data holders ──────────────────────────────────────────────────────────────
 
@@ -262,7 +263,9 @@ class _SessionScreenState extends State<SessionScreen> {
     );
     final entry = _ExerciseEntry(exercise: exercise, sessionExerciseId: se.id!);
     setState(() => _entries.add(entry));
-    await _addSet(entry);
+    for (var i = 0; i < 3; i++) {
+      await _addSet(entry);
+    }
   }
 
   Future<void> _addSet(_ExerciseEntry entry) async {
@@ -832,10 +835,12 @@ class _ExercisePickerSheetState extends State<_ExercisePickerSheet> {
   void _showCreateDialog() {
     final onSelected = widget.onSelected;
     Navigator.pop(context);
-    showDialog(
+    showDialog<Exercise>(
       context: widget.parentContext,
-      builder: (_) => _CreateExerciseDialog(onCreated: onSelected),
-    );
+      builder: (_) => const ExerciseFormDialog(),
+    ).then((result) {
+      if (result != null) onSelected(result);
+    });
   }
 
   @override
@@ -1065,89 +1070,6 @@ class _RoutinePickerSheet extends StatelessWidget {
   }
 }
 
-// ── Create exercise dialog ────────────────────────────────────────────────────
-
-class _CreateExerciseDialog extends StatefulWidget {
-  const _CreateExerciseDialog({required this.onCreated});
-  final void Function(Exercise) onCreated;
-
-  @override
-  State<_CreateExerciseDialog> createState() => _CreateExerciseDialogState();
-}
-
-class _CreateExerciseDialogState extends State<_CreateExerciseDialog> {
-  final _nameCtrl = TextEditingController();
-  MuscleCategory _category = MuscleCategory.pecho;
-  bool _saving = false;
-
-  @override
-  void dispose() {
-    _nameCtrl.dispose();
-    super.dispose();
-  }
-
-  Future<void> _save() async {
-    final name = _nameCtrl.text.trim();
-    if (name.isEmpty) return;
-    setState(() => _saving = true);
-    final exercise = await ExerciseService.instance.insert(
-      Exercise(name: name, muscleCategory: _category, isCustom: true),
-    );
-    if (mounted) {
-      Navigator.pop(context);
-      widget.onCreated(exercise);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Nuevo ejercicio'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TextField(
-            controller: _nameCtrl,
-            autofocus: true,
-            textCapitalization: TextCapitalization.sentences,
-            decoration: const InputDecoration(
-              labelText: 'Nombre',
-              border: OutlineInputBorder(),
-            ),
-            onSubmitted: (_) => _save(),
-          ),
-          const SizedBox(height: 16),
-          DropdownButtonFormField<MuscleCategory>(
-            initialValue: _category,
-            decoration: const InputDecoration(
-              labelText: 'Grupo muscular',
-              border: OutlineInputBorder(),
-            ),
-            items: MuscleCategory.values
-                .map((c) => DropdownMenuItem(
-                    value: c, child: Text(c.displayName)))
-                .toList(),
-            onChanged: (v) => setState(() => _category = v!),
-          ),
-        ],
-      ),
-      actions: [
-        TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar')),
-        FilledButton(
-          onPressed: _saving ? null : _save,
-          child: _saving
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2))
-              : const Text('Guardar'),
-        ),
-      ],
-    );
-  }
-}
 
 // ── Week header ───────────────────────────────────────────────────────────────
 
