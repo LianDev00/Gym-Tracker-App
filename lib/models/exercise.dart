@@ -8,6 +8,7 @@ class Exercise {
     required this.name,
     required this.muscleCategory,
     this.isCustom = false,
+    this.isBodyweight = false,
     this.muscles = const {},
   });
 
@@ -15,6 +16,12 @@ class Exercise {
   final String name;
   final MuscleCategory muscleCategory;
   final bool isCustom;
+
+  /// `true` si el ejercicio se realiza con peso corporal (lagartijas, dominadas,
+  /// fondos, etc.) y por tanto **no** debe pedir kilos por set. El volumen se
+  /// imputa luego en estadísticas multiplicando reps × último peso corporal
+  /// registrado al momento de la sesión.
+  final bool isBodyweight;
 
   /// Atribución granular del ejercicio a uno o más [MuscleGroup] con su [MuscleRole].
   /// Persistido en la tabla join `exercise_muscles`, no en la fila de `exercises`.
@@ -26,6 +33,7 @@ class Exercise {
     String? name,
     MuscleCategory? muscleCategory,
     bool? isCustom,
+    bool? isBodyweight,
     Map<MuscleGroup, MuscleRole>? muscles,
   }) =>
       Exercise(
@@ -33,6 +41,7 @@ class Exercise {
         name: name ?? this.name,
         muscleCategory: muscleCategory ?? this.muscleCategory,
         isCustom: isCustom ?? this.isCustom,
+        isBodyweight: isBodyweight ?? this.isBodyweight,
         muscles: muscles ?? this.muscles,
       );
 
@@ -41,6 +50,7 @@ class Exercise {
         DbConstants.cExName: name,
         DbConstants.cExMuscleCategory: muscleCategory.name,
         DbConstants.cExIsCustom: isCustom ? 1 : 0,
+        DbConstants.cExIsBodyweight: isBodyweight ? 1 : 0,
       };
 
   factory Exercise.fromMap(Map<String, dynamic> map) => Exercise(
@@ -49,6 +59,8 @@ class Exercise {
         muscleCategory:
             MuscleCategory.fromString(map[DbConstants.cExMuscleCategory] as String),
         isCustom: (map[DbConstants.cExIsCustom] as int) == 1,
+        isBodyweight:
+            (map[DbConstants.cExIsBodyweight] as int? ?? 0) == 1,
       );
 
   @override

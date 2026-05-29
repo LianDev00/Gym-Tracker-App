@@ -7,6 +7,28 @@ class StatisticsService {
   StatisticsService._();
   static final StatisticsService instance = StatisticsService._();
 
+  /// Expresión SQL que devuelve el peso "efectivo" de un set para cálculos
+  /// de volumen.
+  ///
+  /// - Ejercicios normales → `ss.weight_kg`.
+  /// - Ejercicios con `is_bodyweight = 1` → último peso corporal registrado
+  ///   en `body_entries` con fecha ≤ la fecha de la sesión. Si el usuario aún
+  ///   no tiene mediciones de peso corporal, devuelve `NULL` y el set aporta 0
+  ///   al volumen (degradación silenciosa, no rompe nada).
+  ///
+  /// Asume que la query trae los aliases: `ss` (session_sets), `s` (sessions),
+  /// `e` (exercises). Toda query de volumen debe hacer `JOIN exercises e`.
+  static const _effectiveWeightExpr = '''
+    CASE WHEN e.${DbConstants.cExIsBodyweight} = 1 THEN
+      (SELECT be.${DbConstants.cBeWeightKg}
+       FROM ${DbConstants.tBodyEntries} be
+       WHERE be.${DbConstants.cBeWeightKg} IS NOT NULL
+         AND be.${DbConstants.cBeDate} <= s.${DbConstants.cSeDate}
+       ORDER BY be.${DbConstants.cBeDate} DESC
+       LIMIT 1)
+    ELSE ss.${DbConstants.cSsWeightKg} END
+  ''';
+
   // ── Volumen ───────────────────────────────────────────────────────────────────
 
   /// Volumen total (reps × peso) en la semana que contiene [date].
@@ -26,15 +48,16 @@ class StatisticsService {
   Future<double> _volumeBetween(DateTime from, DateTime to) async {
     final db = await DatabaseHelper.instance.database;
     final result = await db.rawQuery('''
-      SELECT COALESCE(SUM(ss.${DbConstants.cSsReps} * ss.${DbConstants.cSsWeightKg}), 0) AS volume
+      SELECT COALESCE(SUM(ss.${DbConstants.cSsReps} * COALESCE(($_effectiveWeightExpr), 0)), 0) AS volume
       FROM ${DbConstants.tSessionSets} ss
       JOIN ${DbConstants.tSessionExercises} sx
         ON ss.${DbConstants.cSsSessionExerciseId} = sx.${DbConstants.cSxId}
       JOIN ${DbConstants.tSessions} s
         ON sx.${DbConstants.cSxSessionId} = s.${DbConstants.cSeId}
+      JOIN ${DbConstants.tExercises} e
+        ON sx.${DbConstants.cSxExerciseId} = e.${DbConstants.cExId}
       WHERE s.${DbConstants.cSeDate} >= ? AND s.${DbConstants.cSeDate} < ?
         AND ss.${DbConstants.cSsReps} IS NOT NULL
-        AND ss.${DbConstants.cSsWeightKg} IS NOT NULL
     ''', [from.toIso8601String(), to.toIso8601String()]);
     return (result.first['volume'] as num).toDouble();
   }
@@ -142,7 +165,7 @@ class StatisticsService {
     final db = await DatabaseHelper.instance.database;
     final rows = await db.rawQuery('''
       SELECT e.${DbConstants.cExMuscleCategory},
-             COALESCE(SUM(ss.${DbConstants.cSsReps} * ss.${DbConstants.cSsWeightKg}), 0) AS volume
+             COALESCE(SUM(ss.${DbConstants.cSsReps} * COALESCE(($_effectiveWeightExpr), 0)), 0) AS volume
       FROM ${DbConstants.tSessionSets} ss
       JOIN ${DbConstants.tSessionExercises} sx
         ON ss.${DbConstants.cSsSessionExerciseId} = sx.${DbConstants.cSxId}
@@ -152,7 +175,6 @@ class StatisticsService {
         ON sx.${DbConstants.cSxExerciseId} = e.${DbConstants.cExId}
       WHERE s.${DbConstants.cSeDate} >= ? AND s.${DbConstants.cSeDate} < ?
         AND ss.${DbConstants.cSsReps} IS NOT NULL
-        AND ss.${DbConstants.cSsWeightKg} IS NOT NULL
       GROUP BY e.${DbConstants.cExMuscleCategory}
       ORDER BY volume DESC
     ''', [from.toIso8601String(), to.toIso8601String()]);
@@ -175,8 +197,7 @@ class StatisticsService {
              s.${DbConstants.cSeId},
              COALESCE(SUM(
                CASE WHEN ss.${DbConstants.cSsReps} IS NOT NULL
-                    AND ss.${DbConstants.cSsWeightKg} IS NOT NULL
-               THEN ss.${DbConstants.cSsReps} * ss.${DbConstants.cSsWeightKg}
+               THEN ss.${DbConstants.cSsReps} * COALESCE(($_effectiveWeightExpr), 0)
                ELSE 0 END
              ), 0) AS total_volume
       FROM ${DbConstants.tSessions} s
@@ -184,6 +205,8 @@ class StatisticsService {
         ON sx.${DbConstants.cSxSessionId} = s.${DbConstants.cSeId}
       LEFT JOIN ${DbConstants.tSessionSets} ss
         ON ss.${DbConstants.cSsSessionExerciseId} = sx.${DbConstants.cSxId}
+      LEFT JOIN ${DbConstants.tExercises} e
+        ON sx.${DbConstants.cSxExerciseId} = e.${DbConstants.cExId}
       WHERE s.${DbConstants.cSeIsRestDay} = 0
       GROUP BY s.${DbConstants.cSeId}
       ORDER BY s.${DbConstants.cSeDate}
@@ -200,34 +223,47 @@ class StatisticsService {
   // ── Rachas ────────────────────────────────────────────────────────────────────
 
   /// Devuelve [currentStreak] y [maxStreak] de días consecutivos entrenados.
+  ///
+  /// Los días de descanso registrados **preservan** la racha (no la incrementan
+  /// ni la rompen) siempre que sean consecutivos a un día con sesión. Un hueco
+  /// real sin registro alguno (`diff > 1`) sí la resetea.
   Future<({int currentStreak, int maxStreak})> streaks() async {
     final db = await DatabaseHelper.instance.database;
+    // MIN(is_rest_day): si un día tiene cualquier sesión de entreno, cuenta
+    // como entrenado aunque también exista un descanso registrado.
     final rows = await db.rawQuery('''
-      SELECT DISTINCT DATE(${DbConstants.cSeDate}) AS day
+      SELECT DATE(${DbConstants.cSeDate}) AS day,
+             MIN(${DbConstants.cSeIsRestDay}) AS is_rest
       FROM ${DbConstants.tSessions}
-      WHERE ${DbConstants.cSeIsRestDay} = 0
+      GROUP BY day
       ORDER BY day
     ''');
 
     if (rows.isEmpty) return (currentStreak: 0, maxStreak: 0);
 
-    final days = rows
-        .map((r) => DateTime.parse(r['day'] as String))
+    final entries = rows
+        .map((r) => (
+              day: DateTime.parse(r['day'] as String),
+              isRest: (r['is_rest'] as int) == 1,
+            ))
         .toList();
 
-    int max = 1, streak = 1;
-    for (int i = 1; i < days.length; i++) {
-      final diff = days[i].difference(days[i - 1]).inDays;
+    int max = 0;
+    int streak = entries.first.isRest ? 0 : 1;
+    if (streak > max) max = streak;
+
+    for (int i = 1; i < entries.length; i++) {
+      final diff = entries[i].day.difference(entries[i - 1].day).inDays;
       if (diff == 1) {
-        streak++;
-        if (streak > max) max = streak;
+        if (!entries[i].isRest) streak++;
       } else if (diff > 1) {
-        streak = 1;
+        streak = entries[i].isRest ? 0 : 1;
       }
+      if (streak > max) max = streak;
     }
 
     final today = DateTime.now();
-    final lastDay = days.last;
+    final lastDay = entries.last.day;
     final diffToToday = DateTime(today.year, today.month, today.day)
         .difference(DateTime(lastDay.year, lastDay.month, lastDay.day))
         .inDays;
@@ -248,8 +284,7 @@ class StatisticsService {
              s.${DbConstants.cSeId},
              COALESCE(SUM(
                CASE WHEN ss.${DbConstants.cSsReps} IS NOT NULL
-                    AND ss.${DbConstants.cSsWeightKg} IS NOT NULL
-               THEN ss.${DbConstants.cSsReps} * ss.${DbConstants.cSsWeightKg}
+               THEN ss.${DbConstants.cSsReps} * COALESCE(($_effectiveWeightExpr), 0)
                ELSE 0 END
              ), 0) AS volume,
              AVG(ss.${DbConstants.cSsRir}) AS avg_rir,
@@ -261,6 +296,8 @@ class StatisticsService {
         ON sx.${DbConstants.cSxSessionId} = s.${DbConstants.cSeId}
       LEFT JOIN ${DbConstants.tSessionSets} ss
         ON ss.${DbConstants.cSsSessionExerciseId} = sx.${DbConstants.cSxId}
+      LEFT JOIN ${DbConstants.tExercises} e
+        ON sx.${DbConstants.cSxExerciseId} = e.${DbConstants.cExId}
       WHERE s.${DbConstants.cSeIsRestDay} = 0
       GROUP BY s.${DbConstants.cSeId}
       ORDER BY s.${DbConstants.cSeDate}
@@ -402,7 +439,7 @@ class StatisticsService {
     final db = await DatabaseHelper.instance.database;
     final rows = await db.rawQuery('''
       SELECT e.${DbConstants.cExMuscleCategory} AS mk,
-             COALESCE(SUM(ss.${DbConstants.cSsReps} * ss.${DbConstants.cSsWeightKg}), 0) AS volume,
+             COALESCE(SUM(ss.${DbConstants.cSsReps} * COALESCE(($_effectiveWeightExpr), 0)), 0) AS volume,
              AVG(ss.${DbConstants.cSsRir}) AS avg_rir
       FROM ${DbConstants.tSessionSets} ss
       JOIN ${DbConstants.tSessionExercises} sx
@@ -435,8 +472,7 @@ class StatisticsService {
              e.${DbConstants.cExMuscleCategory} AS muscle,
              COALESCE(SUM(
                CASE WHEN ss.${DbConstants.cSsReps} IS NOT NULL
-                    AND ss.${DbConstants.cSsWeightKg} IS NOT NULL
-               THEN ss.${DbConstants.cSsReps} * ss.${DbConstants.cSsWeightKg}
+               THEN ss.${DbConstants.cSsReps} * COALESCE(($_effectiveWeightExpr), 0)
                ELSE 0 END
              ), 0) AS volume,
              COUNT(ss.${DbConstants.cSsId}) AS set_count
@@ -483,7 +519,7 @@ class StatisticsService {
     final db = await DatabaseHelper.instance.database;
     final rows = await db.rawQuery('''
       SELECT e.${DbConstants.cExMuscleCategory},
-             SUM(ss.${DbConstants.cSsReps} * ss.${DbConstants.cSsWeightKg}) AS volume
+             SUM(ss.${DbConstants.cSsReps} * COALESCE(($_effectiveWeightExpr), 0)) AS volume
       FROM ${DbConstants.tSessionSets} ss
       JOIN ${DbConstants.tSessionExercises} sx
         ON ss.${DbConstants.cSsSessionExerciseId} = sx.${DbConstants.cSxId}
@@ -493,7 +529,6 @@ class StatisticsService {
         ON sx.${DbConstants.cSxExerciseId} = e.${DbConstants.cExId}
       WHERE s.${DbConstants.cSeDate} >= ? AND s.${DbConstants.cSeDate} < ?
         AND ss.${DbConstants.cSsReps} IS NOT NULL
-        AND ss.${DbConstants.cSsWeightKg} IS NOT NULL
       GROUP BY e.${DbConstants.cExMuscleCategory}
       ORDER BY volume DESC
       LIMIT 1

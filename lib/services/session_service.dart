@@ -166,6 +166,23 @@ class SessionService {
     );
   }
 
+  /// Persiste el nuevo orden de los ejercicios de una sesión.
+  /// [orderedIds] son los ids de [SessionExercise] en su orden final;
+  /// cada uno recibe como `exercise_order` su índice en la lista.
+  Future<void> updateSessionExerciseOrder(List<int> orderedIds) async {
+    final db = await _db;
+    await db.transaction((txn) async {
+      for (var i = 0; i < orderedIds.length; i++) {
+        await txn.update(
+          DbConstants.tSessionExercises,
+          {DbConstants.cSxOrder: i},
+          where: '${DbConstants.cSxId} = ?',
+          whereArgs: [orderedIds[i]],
+        );
+      }
+    });
+  }
+
   // ── Session sets ──────────────────────────────────────────────────────────────
 
   Future<List<SessionSet>> getSetsForSessionExercise(int sessionExerciseId) async {

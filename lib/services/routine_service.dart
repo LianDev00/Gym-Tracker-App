@@ -86,6 +86,23 @@ class RoutineService {
     );
   }
 
+  /// Persiste el nuevo orden de los ejercicios dentro de una rutina.
+  /// [orderedIds] son los ids de [RoutineExercise] en su orden final;
+  /// cada uno recibe como `exercise_order` su índice en la lista.
+  Future<void> updateRoutineExerciseOrder(List<int> orderedIds) async {
+    final db = await _db;
+    await db.transaction((txn) async {
+      for (var i = 0; i < orderedIds.length; i++) {
+        await txn.update(
+          DbConstants.tRoutineExercises,
+          {DbConstants.cReOrder: i},
+          where: '${DbConstants.cReId} = ?',
+          whereArgs: [orderedIds[i]],
+        );
+      }
+    });
+  }
+
   /// Crea una nueva sesión pre-poblada a partir de una rutina.
   /// Inserta la sesión y los [SessionExercise] correspondientes; las series
   /// se registran manualmente durante el entrenamiento.

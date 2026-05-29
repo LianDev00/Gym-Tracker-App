@@ -27,6 +27,7 @@ class _ExerciseFormDialogState extends State<ExerciseFormDialog> {
   late final TextEditingController _nameCtrl;
   late MuscleCategory _category;
   late Map<MuscleGroup, MuscleRole> _muscles;
+  late bool _isBodyweight;
   bool _saving = false;
 
   bool get _isEdit => widget.initial != null;
@@ -38,6 +39,7 @@ class _ExerciseFormDialogState extends State<ExerciseFormDialog> {
     _nameCtrl = TextEditingController(text: initial?.name ?? '');
     _category = initial?.muscleCategory ?? MuscleCategory.pecho;
     _muscles = Map.of(initial?.muscles ?? const <MuscleGroup, MuscleRole>{});
+    _isBodyweight = initial?.isBodyweight ?? false;
   }
 
   @override
@@ -57,6 +59,7 @@ class _ExerciseFormDialogState extends State<ExerciseFormDialog> {
       final updated = widget.initial!.copyWith(
         name: name,
         muscleCategory: _category,
+        isBodyweight: _isBodyweight,
         muscles: _muscles,
       );
       await service.update(updated);
@@ -66,6 +69,7 @@ class _ExerciseFormDialogState extends State<ExerciseFormDialog> {
         name: name,
         muscleCategory: _category,
         isCustom: true,
+        isBodyweight: _isBodyweight,
         muscles: _muscles,
       ));
     }
@@ -124,7 +128,18 @@ class _ExerciseFormDialogState extends State<ExerciseFormDialog> {
                     .toList(),
                 onChanged: (v) => setState(() => _category = v!),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 8),
+              SwitchListTile.adaptive(
+                contentPadding: EdgeInsets.zero,
+                value: _isBodyweight,
+                onChanged: (v) => setState(() => _isBodyweight = v),
+                title: const Text('Peso corporal'),
+                subtitle: const Text(
+                  'Sin kilos por serie. El volumen usa tu peso corporal.',
+                  style: TextStyle(fontSize: 12),
+                ),
+              ),
+              const SizedBox(height: 8),
               Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
