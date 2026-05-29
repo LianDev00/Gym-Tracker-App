@@ -14,6 +14,8 @@ import '../../services/routine_service.dart';
 import '../../services/session_notifier.dart';
 import '../../services/session_service.dart';
 import '../../widgets/dialogs/exercise_form_dialog.dart';
+import '../../widgets/session/rest_timer_sheet.dart';
+import '../../widgets/session/side_dock.dart';
 
 // ── Data holders ──────────────────────────────────────────────────────────────
 
@@ -280,6 +282,17 @@ class _SessionScreenState extends State<SessionScreen> {
     setState(() => entry.sets.add(setEntry));
   }
 
+  void _reorderExercises(int oldIndex, int newIndex) {
+    setState(() {
+      if (newIndex > oldIndex) newIndex -= 1;
+      final entry = _entries.removeAt(oldIndex);
+      _entries.insert(newIndex, entry);
+    });
+    _sessionService.updateSessionExerciseOrder(
+      [for (final e in _entries) e.sessionExerciseId],
+    );
+  }
+
   Future<void> _removeExercise(_ExerciseEntry entry) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -413,56 +426,55 @@ class _SessionScreenState extends State<SessionScreen> {
           InfoButton(text: 'Registra tus entrenamientos por día. Agrega ejercicios o carga una rutina. Los datos se guardan automáticamente.'),
         ],
       ),
-      body: Column(
+      body: Stack(
         children: [
-          _WeekHeader(
-            weekStart: _weekStart,
-            onPrev: () => _changeWeek(-1),
-            onNext: () => _changeWeek(1),
-            onToday: () {
-              setState(() => _weekStart = _mondayOf(_today()));
-              _loadWeekSessions();
-              _selectDay(_today());
-            },
+          Column(
+            children: [
+              _WeekHeader(
+                weekStart: _weekStart,
+                onPrev: () => _changeWeek(-1),
+                onNext: () => _changeWeek(1),
+                onToday: () {
+                  setState(() => _weekStart = _mondayOf(_today()));
+                  _loadWeekSessions();
+                  _selectDay(_today());
+                },
+              ),
+              _WeekBar(
+                weekStart: _weekStart,
+                selectedDate: _selectedDate,
+                sessionWeekdays: _sessionWeekdays,
+                restWeekdays: _restWeekdays,
+                onDaySelected: _selectDay,
+              ),
+              Divider(height: 1, color: colors.outlineVariant.withValues(alpha: 0.3)),
+              Expanded(
+                child: _isRestDay
+                    ? _RestDayView(onUndo: _toggleRestDay)
+                    : _entries.isEmpty
+                        ? _EmptySessionView(onMarkRest: _toggleRestDay)
+                        : ReorderableListView.builder(
+                            padding: const EdgeInsets.only(bottom: 100),
+                            itemCount: _entries.length,
+                            onReorder: _reorderExercises,
+                            itemBuilder: (_, i) => _ExerciseCard(
+                              key: ValueKey(_entries[i].sessionExerciseId),
+                              entry: _entries[i],
+                              onAddSet: () => _addSet(_entries[i]),
+                              onRemoveExercise: () => _removeExercise(_entries[i]),
+                              onRemoveSet: (set) => _removeSet(_entries[i], set),
+                            ),
+                          ),
+              ),
+            ],
           ),
-          _WeekBar(
-            weekStart: _weekStart,
-            selectedDate: _selectedDate,
-            sessionWeekdays: _sessionWeekdays,
-            restWeekdays: _restWeekdays,
-            onDaySelected: _selectDay,
-          ),
-          Divider(height: 1, color: colors.outlineVariant.withValues(alpha: 0.3)),
-          Expanded(
-            child: _isRestDay
-                ? _RestDayView(onUndo: _toggleRestDay)
-                : _entries.isEmpty
-                    ? _EmptySessionView(onMarkRest: _toggleRestDay)
-                    : ListView.builder(
-                        padding: const EdgeInsets.only(bottom: 100),
-                        itemCount: _entries.length,
-                        itemBuilder: (_, i) => _ExerciseCard(
-                          entry: _entries[i],
-                          onAddSet: () => _addSet(_entries[i]),
-                          onRemoveExercise: () => _removeExercise(_entries[i]),
-                          onRemoveSet: (set) => _removeSet(_entries[i], set),
-                        ),
-                      ),
-          ),
+          if (!_isRestDay)
+            SessionSideDock(
+              onTimerTap: () => showRestTimerSheet(context),
+              onAddTap: _showAddOptions,
+            ),
         ],
       ),
-      floatingActionButton: _isRestDay
-          ? null
-          : Padding(
-              padding: EdgeInsets.only(
-                bottom: MediaQuery.viewPaddingOf(context).bottom + 100,
-              ),
-              child: FloatingActionButton.extended(
-                onPressed: _showAddOptions,
-                icon: const Icon(Icons.add),
-                label: const Text('Agregar'),
-              ),
-            ),
     );
   }
 }
@@ -550,6 +562,7 @@ class _RestDayView extends StatelessWidget {
 
 class _ExerciseCard extends StatelessWidget {
   const _ExerciseCard({
+    super.key,
     required this.entry,
     required this.onAddSet,
     required this.onRemoveExercise,
@@ -564,6 +577,7 @@ class _ExerciseCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final isBodyweight = entry.exercise.isBodyweight;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -609,7 +623,16 @@ class _ExerciseCard extends StatelessWidget {
                             ?.copyWith(fontWeight: FontWeight.bold),
                       ),
                       const SizedBox(height: 4),
-                      GlassChip(entry.exercise.muscleCategory.displayName),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          GlassChip(entry.exercise.muscleCategory.displayName),
+                          if (isBodyweight) ...const [
+                            SizedBox(width: 6),
+                            GlassChip('Peso corporal'),
+                          ],
+                        ],
+                      ),
                     ],
                   ),
                 ),
@@ -625,22 +648,24 @@ class _ExerciseCard extends StatelessWidget {
 
             // Column headers
             if (entry.sets.isNotEmpty)
-              const Padding(
-                padding: EdgeInsets.only(bottom: 4),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
                 child: Row(
                   children: [
-                    SizedBox(width: 32),
-                    Expanded(
-                      child: Text('Peso (kg)',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: AppColors.primary,
-                            fontWeight: FontWeight.w700,
-                          ),
-                          textAlign: TextAlign.center),
-                    ),
-                    SizedBox(width: 4),
-                    Expanded(
+                    const SizedBox(width: 32),
+                    if (!isBodyweight) ...const [
+                      Expanded(
+                        child: Text('Peso (kg)',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: AppColors.primary,
+                              fontWeight: FontWeight.w700,
+                            ),
+                            textAlign: TextAlign.center),
+                      ),
+                      SizedBox(width: 4),
+                    ],
+                    const Expanded(
                       child: Text('Reps',
                           style: TextStyle(
                             fontSize: 12,
@@ -649,8 +674,8 @@ class _ExerciseCard extends StatelessWidget {
                           ),
                           textAlign: TextAlign.center),
                     ),
-                    SizedBox(width: 4),
-                    SizedBox(
+                    const SizedBox(width: 4),
+                    const SizedBox(
                       width: 44,
                       child: Text('RIR',
                           style: TextStyle(
@@ -660,7 +685,7 @@ class _ExerciseCard extends StatelessWidget {
                           ),
                           textAlign: TextAlign.center),
                     ),
-                    SizedBox(width: 32),
+                    const SizedBox(width: 32),
                   ],
                 ),
               ),
@@ -670,6 +695,7 @@ class _ExerciseCard extends StatelessWidget {
                   (e) => _SetRow(
                     index: e.key,
                     setEntry: e.value,
+                    isBodyweight: isBodyweight,
                     onRemove: () => onRemoveSet(e.value),
                   ),
                 ),
@@ -697,10 +723,12 @@ class _SetRow extends StatelessWidget {
   const _SetRow(
       {required this.index,
       required this.setEntry,
+      required this.isBodyweight,
       required this.onRemove});
 
   final int index;
   final _SetEntry setEntry;
+  final bool isBodyweight;
   final VoidCallback onRemove;
 
   @override
@@ -717,14 +745,16 @@ class _SetRow extends StatelessWidget {
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
           ),
-          Expanded(
-            child: _SetField(
-              controller: setEntry.weightCtrl,
-              hint: '0',
-              isDecimal: true,
+          if (!isBodyweight) ...[
+            Expanded(
+              child: _SetField(
+                controller: setEntry.weightCtrl,
+                hint: '0',
+                isDecimal: true,
+              ),
             ),
-          ),
-          const SizedBox(width: 4),
+            const SizedBox(width: 4),
+          ],
           Expanded(
             child: _SetField(
               controller: setEntry.repsCtrl,

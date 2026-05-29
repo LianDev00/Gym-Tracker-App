@@ -285,6 +285,18 @@ class _RoutineDetailSheetState extends State<_RoutineDetailSheet> {
     widget.onChanged();
   }
 
+  void _reorderItems(int oldIndex, int newIndex) {
+    setState(() {
+      if (newIndex > oldIndex) newIndex -= 1;
+      final item = _items.removeAt(oldIndex);
+      _items.insert(newIndex, item);
+    });
+    _routineService.updateRoutineExerciseOrder(
+      [for (final it in _items) it.re.id!],
+    );
+    widget.onChanged();
+  }
+
   Future<void> _removeExercise(RoutineExercise re) async {
     await _routineService.deleteRoutineExercise(re.id!);
     await _load();
@@ -349,13 +361,16 @@ class _RoutineDetailSheetState extends State<_RoutineDetailSheet> {
                           ),
                         ],
                       )
-                    : ListView.builder(
-                        controller: controller,
+                    : ReorderableListView.builder(
+                        scrollController: controller,
                         padding: const EdgeInsets.only(bottom: 80),
                         itemCount: _items.length,
+                        onReorder: _reorderItems,
+                        buildDefaultDragHandles: false,
                         itemBuilder: (_, i) {
                           final item = _items[i];
                           return ListTile(
+                            key: ValueKey(item.re.id),
                             leading: CircleAvatar(
                               backgroundColor: colors.primaryContainer,
                               child: Text(
@@ -371,10 +386,20 @@ class _RoutineDetailSheetState extends State<_RoutineDetailSheet> {
                               style: TextStyle(
                                   color: colors.outline, fontSize: 12),
                             ),
-                            trailing: IconButton(
-                              icon: Icon(Icons.remove_circle_outline,
-                                  color: colors.error),
-                              onPressed: () => _removeExercise(item.re),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  icon: Icon(Icons.remove_circle_outline,
+                                      color: colors.error),
+                                  onPressed: () => _removeExercise(item.re),
+                                ),
+                                ReorderableDragStartListener(
+                                  index: i,
+                                  child: Icon(Icons.drag_handle,
+                                      color: colors.outline),
+                                ),
+                              ],
                             ),
                           );
                         },

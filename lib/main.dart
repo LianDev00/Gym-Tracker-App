@@ -10,10 +10,14 @@ import 'screens/routines/routines_screen.dart';
 import 'screens/body/body_screen.dart';
 import 'screens/splash/splash_screen.dart';
 import 'screens/stats/stats_screen.dart';
+import 'services/notification_service.dart';
 
-void main() {
+void main() async {
   final binding = WidgetsFlutterBinding.ensureInitialized();
   FlutterNativeSplash.preserve(widgetsBinding: binding);
+  // Inicialización temprana del plugin de notificaciones (canal + timezone)
+  // para que `scheduleRestTimerEnd` esté listo cuando el usuario abra el timer.
+  await NotificationService.instance.init();
   runApp(const GymTrackerApp());
 }
 

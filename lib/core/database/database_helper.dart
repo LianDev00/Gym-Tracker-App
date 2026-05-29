@@ -61,6 +61,11 @@ class DatabaseHelper {
       await db.execute(_createExerciseMuscles);
       await _seedExerciseMuscles(db);
     }
+    if (oldVersion < 7) {
+      await db.execute(
+        'ALTER TABLE ${DbConstants.tExercises} ADD COLUMN ${DbConstants.cExIsBodyweight} INTEGER NOT NULL DEFAULT 0',
+      );
+    }
   }
 
   /// Activa las foreign keys de SQLite (desactivadas por defecto).
@@ -89,7 +94,8 @@ class DatabaseHelper {
       ${DbConstants.cExId}             INTEGER PRIMARY KEY AUTOINCREMENT,
       ${DbConstants.cExName}           TEXT    NOT NULL,
       ${DbConstants.cExMuscleCategory} TEXT    NOT NULL,
-      ${DbConstants.cExIsCustom}       INTEGER NOT NULL DEFAULT 0
+      ${DbConstants.cExIsCustom}       INTEGER NOT NULL DEFAULT 0,
+      ${DbConstants.cExIsBodyweight}   INTEGER NOT NULL DEFAULT 0
     )
   ''';
 

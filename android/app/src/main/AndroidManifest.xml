@@ -1,4 +1,14 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Notificación al terminar el temporizador de descanso. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Alarma exacta: necesaria para que el aviso dispare en el segundo correcto
+         aunque el SO esté en modo Doze (pantalla apagada / app en background). -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <!-- Re-programar alarmas tras un reboot (flutter_local_notifications). -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
     <application
         android:label="Gym Tracker"
         android:name="${applicationName}"
