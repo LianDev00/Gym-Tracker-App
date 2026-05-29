@@ -14,8 +14,6 @@ import '../../services/routine_service.dart';
 import '../../services/session_notifier.dart';
 import '../../services/session_service.dart';
 import '../../widgets/dialogs/exercise_form_dialog.dart';
-import '../../widgets/session/rest_timer_sheet.dart';
-import '../../widgets/session/side_dock.dart';
 
 // ── Data holders ──────────────────────────────────────────────────────────────
 
@@ -426,58 +424,56 @@ class _SessionScreenState extends State<SessionScreen> {
           InfoButton(text: 'Registra tus entrenamientos por día. Agrega ejercicios o carga una rutina. Los datos se guardan automáticamente.'),
         ],
       ),
-      body: Stack(
+      body: Column(
         children: [
-          Column(
-            children: [
-              _WeekHeader(
-                weekStart: _weekStart,
-                onPrev: () => _changeWeek(-1),
-                onNext: () => _changeWeek(1),
-                onToday: () {
-                  setState(() => _weekStart = _mondayOf(_today()));
-                  _loadWeekSessions();
-                  _selectDay(_today());
-                },
-              ),
-              _WeekBar(
-                weekStart: _weekStart,
-                selectedDate: _selectedDate,
-                sessionWeekdays: _sessionWeekdays,
-                restWeekdays: _restWeekdays,
-                onDaySelected: _selectDay,
-              ),
-              Divider(height: 1, color: colors.outlineVariant.withValues(alpha: 0.3)),
-              Expanded(
-                child: _isRestDay
-                    ? _RestDayView(onUndo: _toggleRestDay)
-                    : _entries.isEmpty
-                        ? _EmptySessionView(
-                            onMarkRest: _toggleRestDay,
-                            onAdd: _showAddOptions,
-                          )
-                        : ReorderableListView.builder(
-                            padding: const EdgeInsets.only(bottom: 100),
-                            itemCount: _entries.length,
-                            onReorder: _reorderExercises,
-                            itemBuilder: (_, i) => _ExerciseCard(
-                              key: ValueKey(_entries[i].sessionExerciseId),
-                              entry: _entries[i],
-                              onAddSet: () => _addSet(_entries[i]),
-                              onRemoveExercise: () => _removeExercise(_entries[i]),
-                              onRemoveSet: (set) => _removeSet(_entries[i], set),
-                            ),
-                          ),
-              ),
-            ],
+          _WeekHeader(
+            weekStart: _weekStart,
+            onPrev: () => _changeWeek(-1),
+            onNext: () => _changeWeek(1),
+            onToday: () {
+              setState(() => _weekStart = _mondayOf(_today()));
+              _loadWeekSessions();
+              _selectDay(_today());
+            },
           ),
-          if (!_isRestDay)
-            SessionSideDock(
-              onTimerTap: () => showRestTimerSheet(context),
-              onAddTap: _showAddOptions,
-            ),
+          _WeekBar(
+            weekStart: _weekStart,
+            selectedDate: _selectedDate,
+            sessionWeekdays: _sessionWeekdays,
+            restWeekdays: _restWeekdays,
+            onDaySelected: _selectDay,
+          ),
+          Divider(height: 1, color: colors.outlineVariant.withValues(alpha: 0.3)),
+          Expanded(
+            child: _isRestDay
+                ? _RestDayView(onUndo: _toggleRestDay)
+                : _entries.isEmpty
+                    ? _EmptySessionView(
+                        onMarkRest: _toggleRestDay,
+                        onAdd: _showAddOptions,
+                      )
+                    : ReorderableListView.builder(
+                        padding: const EdgeInsets.only(bottom: 100),
+                        itemCount: _entries.length,
+                        onReorder: _reorderExercises,
+                        itemBuilder: (_, i) => _ExerciseCard(
+                          key: ValueKey(_entries[i].sessionExerciseId),
+                          entry: _entries[i],
+                          onAddSet: () => _addSet(_entries[i]),
+                          onRemoveExercise: () => _removeExercise(_entries[i]),
+                          onRemoveSet: (set) => _removeSet(_entries[i], set),
+                        ),
+                      ),
+          ),
         ],
       ),
+      floatingActionButton: (_isRestDay || _entries.isEmpty)
+          ? null
+          : FloatingActionButton.extended(
+              onPressed: _showAddOptions,
+              icon: const Icon(Icons.add),
+              label: const Text('Agregar'),
+            ),
     );
   }
 }
