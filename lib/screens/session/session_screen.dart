@@ -452,7 +452,10 @@ class _SessionScreenState extends State<SessionScreen> {
                 child: _isRestDay
                     ? _RestDayView(onUndo: _toggleRestDay)
                     : _entries.isEmpty
-                        ? _EmptySessionView(onMarkRest: _toggleRestDay)
+                        ? _EmptySessionView(
+                            onMarkRest: _toggleRestDay,
+                            onAdd: _showAddOptions,
+                          )
                         : ReorderableListView.builder(
                             padding: const EdgeInsets.only(bottom: 100),
                             itemCount: _entries.length,
@@ -482,8 +485,9 @@ class _SessionScreenState extends State<SessionScreen> {
 // ── Empty session view (no entries, not rest) ────────────────────────────────
 
 class _EmptySessionView extends StatelessWidget {
-  const _EmptySessionView({required this.onMarkRest});
+  const _EmptySessionView({required this.onMarkRest, required this.onAdd});
   final VoidCallback onMarkRest;
+  final VoidCallback onAdd;
 
   @override
   Widget build(BuildContext context) {
@@ -496,10 +500,13 @@ class _EmptySessionView extends StatelessWidget {
           const SizedBox(height: 16),
           Text('Sin ejercicios',
               style: TextStyle(color: colors.outline, fontSize: 18)),
-          const SizedBox(height: 8),
-          Text('Toca + para agregar un ejercicio',
-              style: TextStyle(color: colors.outlineVariant)),
           const SizedBox(height: 24),
+          FilledButton.icon(
+            onPressed: onAdd,
+            icon: const Icon(Icons.add),
+            label: const Text('Agregar ejercicio o rutina'),
+          ),
+          const SizedBox(height: 8),
           TextButton.icon(
             onPressed: onMarkRest,
             icon: const Icon(Icons.bedtime_outlined, size: 18),
