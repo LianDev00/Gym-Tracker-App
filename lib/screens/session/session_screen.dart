@@ -14,6 +14,7 @@ import '../../services/routine_service.dart';
 import '../../services/session_notifier.dart';
 import '../../services/session_service.dart';
 import '../../widgets/dialogs/exercise_form_dialog.dart';
+import '../../widgets/session/add_side_dock.dart';
 
 // ── Data holders ──────────────────────────────────────────────────────────────
 
@@ -424,9 +425,11 @@ class _SessionScreenState extends State<SessionScreen> {
           InfoButton(text: 'Registra tus entrenamientos por día. Agrega ejercicios o carga una rutina. Los datos se guardan automáticamente.'),
         ],
       ),
-      body: Column(
+      body: Stack(
         children: [
-          _WeekHeader(
+          Column(
+            children: [
+              _WeekHeader(
             weekStart: _weekStart,
             onPrev: () => _changeWeek(-1),
             onNext: () => _changeWeek(1),
@@ -464,16 +467,16 @@ class _SessionScreenState extends State<SessionScreen> {
                           onRemoveSet: (set) => _removeSet(_entries[i], set),
                         ),
                       ),
+              ),
+            ],
           ),
+          if (!_isRestDay && _entries.isNotEmpty)
+            AddSideDock(
+              onAddExercise: _showExercisePicker,
+              onAddRoutine: _showRoutinePicker,
+            ),
         ],
       ),
-      floatingActionButton: (_isRestDay || _entries.isEmpty)
-          ? null
-          : FloatingActionButton.extended(
-              onPressed: _showAddOptions,
-              icon: const Icon(Icons.add),
-              label: const Text('Agregar'),
-            ),
     );
   }
 }
