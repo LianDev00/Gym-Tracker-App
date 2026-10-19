@@ -57,6 +57,7 @@ class _SplashScreenState extends State<SplashScreen>
                         width: 160,
                         height: 160,
                         fit: BoxFit.contain,
+                        cacheWidth: (160 * MediaQuery.devicePixelRatioOf(context)).round(),
                       ),
                       const SizedBox(height: 16),
                       const Text(
