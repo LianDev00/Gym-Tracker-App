@@ -3,7 +3,7 @@
 abstract final class DbConstants {
   // ── Base de datos ────────────────────────────────────────────────────────────
   static const String dbName = 'gym_tracker.db';
-  static const int dbVersion = 7;
+  static const int dbVersion = 8;
 
   // ── Tabla: exercises ─────────────────────────────────────────────────────────
   static const String tExercises = 'exercises';

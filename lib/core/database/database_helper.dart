@@ -66,6 +66,31 @@ class DatabaseHelper {
         'ALTER TABLE ${DbConstants.tExercises} ADD COLUMN ${DbConstants.cExIsBodyweight} INTEGER NOT NULL DEFAULT 0',
       );
     }
+    if (oldVersion < 8) {
+      // Índices sobre FKs: evitan full scans en historial/sesión.
+      await _createIndexes(db);
+    }
+  }
+
+  /// Compartido por onCreate y onUpgrade para que instalaciones nuevas y
+  /// migradas tengan los mismos índices. IF NOT EXISTS lo hace idempotente.
+  Future<void> _createIndexes(DatabaseExecutor db) async {
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_session_exercises_session '
+      'ON ${DbConstants.tSessionExercises}(${DbConstants.cSxSessionId})',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_session_sets_session_exercise '
+      'ON ${DbConstants.tSessionSets}(${DbConstants.cSsSessionExerciseId})',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_sessions_date '
+      'ON ${DbConstants.tSessions}(${DbConstants.cSeDate})',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_routine_exercises_routine '
+      'ON ${DbConstants.tRoutineExercises}(${DbConstants.cReRoutineId})',
+    );
   }
 
   /// Activa las foreign keys de SQLite (desactivadas por defecto).
@@ -83,6 +108,7 @@ class DatabaseHelper {
     await db.execute(_createBodyEntries);
     await db.execute(_createBodyMeasurements);
     await db.execute(_createExerciseMuscles);
+    await _createIndexes(db);
     await _seedDefaultExercises(db);
     await _seedExerciseMuscles(db);
   }

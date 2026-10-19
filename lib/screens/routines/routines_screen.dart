@@ -287,7 +287,6 @@ class _RoutineDetailSheetState extends State<_RoutineDetailSheet> {
 
   void _reorderItems(int oldIndex, int newIndex) {
     setState(() {
-      if (newIndex > oldIndex) newIndex -= 1;
       final item = _items.removeAt(oldIndex);
       _items.insert(newIndex, item);
     });
@@ -365,7 +364,7 @@ class _RoutineDetailSheetState extends State<_RoutineDetailSheet> {
                         scrollController: controller,
                         padding: const EdgeInsets.only(bottom: 80),
                         itemCount: _items.length,
-                        onReorder: _reorderItems,
+                        onReorderItem: _reorderItems,
                         buildDefaultDragHandles: false,
                         itemBuilder: (_, i) {
                           final item = _items[i];

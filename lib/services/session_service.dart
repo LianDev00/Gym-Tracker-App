@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:sqflite/sqflite.dart';
 
 import '../core/constants/db_constants.dart';
@@ -11,6 +13,9 @@ class SessionService {
   static final SessionService instance = SessionService._();
 
   Future<Database> get _db => DatabaseHelper.instance.database;
+
+  // límite histórico de SQLite: 999 variables por statement
+  static const _inChunkSize = 500;
 
   // ── Sesiones ──────────────────────────────────────────────────────────────────
 
@@ -151,6 +156,32 @@ class SessionService {
     return rows.map(SessionExercise.fromMap).toList();
   }
 
+  /// Ejercicios de varias sesiones en pocas queries (evita N+1).
+  /// Devuelve una clave por cada id de [sessionIds] (lista vacía si no tiene),
+  /// cada lista en el mismo orden que [getExercisesForSession].
+  Future<Map<int, List<SessionExercise>>> getExercisesForSessions(
+      List<int> sessionIds) async {
+    final ids = sessionIds.toSet().toList();
+    final result = {for (final id in ids) id: <SessionExercise>[]};
+    if (ids.isEmpty) return result;
+    final db = await _db;
+    for (var i = 0; i < ids.length; i += _inChunkSize) {
+      final chunk = ids.sublist(i, min(i + _inChunkSize, ids.length));
+      final rows = await db.query(
+        DbConstants.tSessionExercises,
+        where:
+            '${DbConstants.cSxSessionId} IN (${List.filled(chunk.length, '?').join(',')})',
+        whereArgs: chunk,
+        orderBy: DbConstants.cSxOrder,
+      );
+      for (final row in rows) {
+        final se = SessionExercise.fromMap(row);
+        result[se.sessionId]!.add(se);
+      }
+    }
+    return result;
+  }
+
   Future<SessionExercise> insertSessionExercise(SessionExercise se) async {
     final db = await _db;
     final id = await db.insert(DbConstants.tSessionExercises, se.toMap());
@@ -183,6 +214,42 @@ class SessionService {
     });
   }
 
+  /// Inserta en UNA transacción un SessionExercise por cada id de [exerciseIds]
+  /// (exercise_order = startOrder, startOrder+1, …) y, para cada uno,
+  /// [setsPerExercise] series vacías numeradas 1..setsPerExercise.
+  /// Devuelve los registros insertados (con id) en el mismo orden de [exerciseIds].
+  Future<List<({SessionExercise sessionExercise, List<SessionSet> sets})>>
+      insertExercisesWithSets({
+    required int sessionId,
+    required List<int> exerciseIds,
+    required int startOrder,
+    required int setsPerExercise,
+  }) async {
+    assert(setsPerExercise >= 0);
+    final db = await _db;
+    return db.transaction((txn) async {
+      final inserted =
+          <({SessionExercise sessionExercise, List<SessionSet> sets})>[];
+      for (var i = 0; i < exerciseIds.length; i++) {
+        var se = SessionExercise(
+          sessionId: sessionId,
+          exerciseId: exerciseIds[i],
+          exerciseOrder: startOrder + i,
+        );
+        se = se.copyWith(
+            id: await txn.insert(DbConstants.tSessionExercises, se.toMap()));
+        final sets = <SessionSet>[];
+        for (var n = 1; n <= setsPerExercise; n++) {
+          final set = SessionSet(sessionExerciseId: se.id!, setNumber: n);
+          sets.add(set.copyWith(
+              id: await txn.insert(DbConstants.tSessionSets, set.toMap())));
+        }
+        inserted.add((sessionExercise: se, sets: sets));
+      }
+      return inserted;
+    });
+  }
+
   // ── Session sets ──────────────────────────────────────────────────────────────
 
   Future<List<SessionSet>> getSetsForSessionExercise(int sessionExerciseId) async {
@@ -194,6 +261,31 @@ class SessionService {
       orderBy: DbConstants.cSsSetNumber,
     );
     return rows.map(SessionSet.fromMap).toList();
+  }
+
+  /// Series de varios ejercicios de sesión en pocas queries (evita N+1).
+  /// Misma garantía de claves y orden que [getSetsForSessionExercise].
+  Future<Map<int, List<SessionSet>>> getSetsForSessionExercises(
+      List<int> sessionExerciseIds) async {
+    final ids = sessionExerciseIds.toSet().toList();
+    final result = {for (final id in ids) id: <SessionSet>[]};
+    if (ids.isEmpty) return result;
+    final db = await _db;
+    for (var i = 0; i < ids.length; i += _inChunkSize) {
+      final chunk = ids.sublist(i, min(i + _inChunkSize, ids.length));
+      final rows = await db.query(
+        DbConstants.tSessionSets,
+        where:
+            '${DbConstants.cSsSessionExerciseId} IN (${List.filled(chunk.length, '?').join(',')})',
+        whereArgs: chunk,
+        orderBy: DbConstants.cSsSetNumber,
+      );
+      for (final row in rows) {
+        final set = SessionSet.fromMap(row);
+        result[set.sessionExerciseId]!.add(set);
+      }
+    }
+    return result;
   }
 
   Future<SessionSet> insertSet(SessionSet set) async {

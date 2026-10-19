@@ -88,25 +88,26 @@ class _HistoryScreenState extends State<HistoryScreen> {
     final allExercises = await _exerciseService.getAll();
     final exerciseMap = {for (final e in allExercises) e.id!: e};
 
-    final summaries = await Future.wait(
-      sessions.map((session) async {
-        final seList = await _sessionService.getExercisesForSession(session.id!);
-        final exerciseData = <_ExerciseData>[];
-
-        for (final se in seList) {
-          final exercise = exerciseMap[se.exerciseId];
-          final name = exercise?.name ?? '?';
-          final dbSets = await _sessionService.getSetsForSessionExercise(se.id!);
-          final sets = dbSets
-              .map((s) => _SetData(weightKg: s.weightKg, reps: s.reps, rir: s.rir))
-              .where((s) => s.hasData)
-              .toList();
-          exerciseData.add(_ExerciseData(name: name, sets: sets));
-        }
-
-        return _SessionSummary(session: session, exerciseData: exerciseData);
-      }),
-    );
+    final seBySession = await _sessionService
+        .getExercisesForSessions([for (final s in sessions) s.id!]);
+    final setsBySe = await _sessionService.getSetsForSessionExercises(
+        [for (final list in seBySession.values) for (final se in list) se.id!]);
+    final summaries = [
+      for (final session in sessions)
+        _SessionSummary(
+          session: session,
+          exerciseData: [
+            for (final se in seBySession[session.id!]!)
+              _ExerciseData(
+                name: exerciseMap[se.exerciseId]?.name ?? '?',
+                sets: setsBySe[se.id!]!
+                    .map((s) => _SetData(weightKg: s.weightKg, reps: s.reps, rir: s.rir))
+                    .where((s) => s.hasData)
+                    .toList(),
+              ),
+          ],
+        ),
+    ];
 
     final restKeys = monthRestDays.map(_dayKey).toSet();
     setState(() {
@@ -179,31 +180,43 @@ class _HistoryScreenState extends State<HistoryScreen> {
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
               onRefresh: _load,
-              child: ListView(
-                padding: const EdgeInsets.only(bottom: 100),
-                children: [
-                  _StreakBanner(streak: _streak),
-                  _CalendarCard(
-                    month: _calendarMonth,
-                    activeDays: _activeDays,
-                    restDays: _restDays,
-                    onPrevMonth: () => _changeMonth(-1),
-                    onNextMonth: () => _changeMonth(1),
-                  ),
-                  const Padding(
-                    padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
-                    child: Text('Sesiones',
-                        style: TextStyle(
-                            fontSize: 16, fontWeight: FontWeight.bold)),
+              child: CustomScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                slivers: [
+                  SliverToBoxAdapter(
+                    child: Column(
+                      children: [
+                        _StreakBanner(streak: _streak),
+                        _CalendarCard(
+                          month: _calendarMonth,
+                          activeDays: _activeDays,
+                          restDays: _restDays,
+                          onPrevMonth: () => _changeMonth(-1),
+                          onNextMonth: () => _changeMonth(1),
+                        ),
+                        const Padding(
+                          padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+                          child: Text('Sesiones',
+                              style: TextStyle(
+                                  fontSize: 16, fontWeight: FontWeight.bold)),
+                        ),
+                      ],
+                    ),
                   ),
                   if (_summaries.isEmpty)
-                    _EmptyState()
+                    SliverToBoxAdapter(child: _EmptyState())
                   else
-                    ..._summaries.map((s) => _SessionCard(
-                          summary: s,
-                          onDelete: () => _deleteSession(s.session),
-                        )),
-                  const SizedBox(height: 24),
+                    SliverList.builder(
+                      itemCount: _summaries.length,
+                      itemBuilder: (_, i) => _SessionCard(
+                        summary: _summaries[i],
+                        onDelete: () => _deleteSession(_summaries[i].session),
+                      ),
+                    ),
+                  const SliverPadding(
+                    padding: EdgeInsets.only(bottom: 100),
+                    sliver: SliverToBoxAdapter(child: SizedBox(height: 24)),
+                  ),
                 ],
               ),
             ),
