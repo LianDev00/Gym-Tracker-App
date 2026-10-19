@@ -67,10 +67,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (lastSession != null) {
       final ses =
           await _sessionService.getExercisesForSession(lastSession.id!);
-      final exList = await Future.wait(
-        ses.map((se) => _exerciseService.getById(se.exerciseId)),
-      );
-      lastExercises = exList.whereType<Exercise>().toList();
+      final exerciseMap = {
+        for (final e in await _exerciseService.getAll()) e.id!: e
+      };
+      lastExercises = [
+        for (final se in ses)
+          if (exerciseMap[se.exerciseId] case final e?) e
+      ];
     }
 
     setState(() {
