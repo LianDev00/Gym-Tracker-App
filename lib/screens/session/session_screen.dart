@@ -7,7 +7,6 @@ import '../../models/exercise.dart';
 import '../../models/muscle_category.dart';
 import '../../models/routine.dart';
 import '../../models/session.dart';
-import '../../models/session_exercise.dart';
 import '../../models/session_set.dart';
 import '../../services/exercise_service.dart';
 import '../../services/routine_service.dart';
@@ -213,17 +212,26 @@ class _SessionScreenState extends State<SessionScreen> {
     final seList = await _sessionService.getExercisesForSession(sessionId);
     final allExercises = await _exerciseService.getAll();
     final exerciseMap = {for (final e in allExercises) e.id!: e};
+    final setsBySe = await _sessionService
+        .getSetsForSessionExercises([for (final se in seList) se.id!]);
 
+    // Se arma todo en local y se aplica con un solo setState al final.
+    final loaded = <_ExerciseEntry>[];
     for (final se in seList) {
       final exercise = exerciseMap[se.exerciseId];
       if (exercise == null) continue;
       final entry = _ExerciseEntry(exercise: exercise, sessionExerciseId: se.id!);
-      if (mounted) setState(() => _entries.add(entry));
+      loaded.add(entry);
 
-      final existingSets = await _sessionService.getSetsForSessionExercise(se.id!);
+      final existingSets = setsBySe[se.id!]!;
       if (existingSets.isEmpty) {
         // Ejercicio sin series → crear la primera vacía
-        await _addSet(entry);
+        final set = await _sessionService.insertSet(
+          SessionSet(sessionExerciseId: se.id!, setNumber: 1),
+        );
+        final setEntry = _SetEntry(id: set.id, setNumber: set.setNumber);
+        _setupListeners(entry, setEntry);
+        entry.sets.add(setEntry);
       } else {
         // Restaurar sets con sus valores guardados
         for (final dbSet in existingSets) {
@@ -232,12 +240,19 @@ class _SessionScreenState extends State<SessionScreen> {
           if (dbSet.reps != null) setEntry.repsCtrl.text = '${dbSet.reps}';
           if (dbSet.rir != null) setEntry.rirCtrl.text = '${dbSet.rir}';
           _setupListeners(entry, setEntry);
-          if (mounted) setState(() => entry.sets.add(setEntry));
+          entry.sets.add(setEntry);
         }
       }
     }
 
-    if (mounted) _loadWeekSessions();
+    if (!mounted) {
+      for (final e in loaded) {
+        for (final s in e.sets) { s.dispose(); }
+      }
+      return;
+    }
+    setState(() => _entries.addAll(loaded));
+    _loadWeekSessions();
   }
 
   Future<int> _ensureSession() async {
@@ -253,20 +268,32 @@ class _SessionScreenState extends State<SessionScreen> {
     return session.id!;
   }
 
-  Future<void> _addExercise(Exercise exercise) async {
+  Future<void> _addExercise(Exercise exercise) => _addExercises([exercise]);
+
+  /// Inserta los ejercicios con sus series en una transacción y los muestra
+  /// con un solo setState.
+  Future<void> _addExercises(List<Exercise> exercises) async {
     final sessionId = await _ensureSession();
-    final se = await _sessionService.insertSessionExercise(
-      SessionExercise(
-        sessionId: sessionId,
-        exerciseId: exercise.id!,
-        exerciseOrder: _entries.length,
-      ),
+    final inserted = await _sessionService.insertExercisesWithSets(
+      sessionId: sessionId,
+      exerciseIds: [for (final e in exercises) e.id!],
+      startOrder: _entries.length,
+      setsPerExercise: 3, // 3 series por defecto (decisión de producto, ver README)
     );
-    final entry = _ExerciseEntry(exercise: exercise, sessionExerciseId: se.id!);
-    setState(() => _entries.add(entry));
-    for (var i = 0; i < 3; i++) {
-      await _addSet(entry);
+    final newEntries = <_ExerciseEntry>[];
+    for (var i = 0; i < inserted.length; i++) {
+      final entry = _ExerciseEntry(
+        exercise: exercises[i],
+        sessionExerciseId: inserted[i].sessionExercise.id!,
+      );
+      for (final set in inserted[i].sets) {
+        final setEntry = _SetEntry(id: set.id, setNumber: set.setNumber);
+        _setupListeners(entry, setEntry);
+        entry.sets.add(setEntry);
+      }
+      newEntries.add(entry);
     }
+    setState(() => _entries.addAll(newEntries));
   }
 
   Future<void> _addSet(_ExerciseEntry entry) async {
@@ -399,12 +426,12 @@ class _SessionScreenState extends State<SessionScreen> {
     final reList = await RoutineService.instance.getExercisesForRoutine(routine.id!);
     final allExercises = await _exerciseService.getAll();
     final exerciseMap = {for (final e in allExercises) e.id!: e};
-    for (final re in reList) {
-      final exercise = exerciseMap[re.exerciseId];
-      if (exercise != null) {
-        await _addExercise(exercise);
-      }
-    }
+    final exercises = [
+      for (final re in reList)
+        if (exerciseMap[re.exerciseId] case final e?) e
+    ];
+    if (exercises.isEmpty) return;
+    await _addExercises(exercises);
   }
 
   @override
