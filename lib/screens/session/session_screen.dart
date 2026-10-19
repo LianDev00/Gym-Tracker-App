@@ -283,7 +283,6 @@ class _SessionScreenState extends State<SessionScreen> {
 
   void _reorderExercises(int oldIndex, int newIndex) {
     setState(() {
-      if (newIndex > oldIndex) newIndex -= 1;
       final entry = _entries.removeAt(oldIndex);
       _entries.insert(newIndex, entry);
     });
@@ -458,7 +457,7 @@ class _SessionScreenState extends State<SessionScreen> {
                     : ReorderableListView.builder(
                         padding: const EdgeInsets.only(bottom: 100),
                         itemCount: _entries.length,
-                        onReorder: _reorderExercises,
+                        onReorderItem: _reorderExercises,
                         itemBuilder: (_, i) => _ExerciseCard(
                           key: ValueKey(_entries[i].sessionExerciseId),
                           entry: _entries[i],
