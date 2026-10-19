@@ -262,7 +262,7 @@ La base de datos se crea automáticamente en el primer arranque con un conjunto 
 
 ## Versión
 
-**1.4.0+8**
+**1.5.0+9.**
 
 ---
 
